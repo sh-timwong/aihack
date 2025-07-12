@@ -76,6 +76,8 @@ The **Corporate Conversation Simulation Platform** is a sophisticated training t
 #### 
 
 ### **Archiecture Diagram Draft**
+
+```mermaid
 ---
 config:
  theme: default
@@ -122,6 +124,9 @@ subgraph subGraph6["Communication & Foundation"]
    Orchestrator -- "7- Delivers synthesized<br>feedback to user" --> UI
    style subGraph3 fill:#E1BEE7
 
+```
+
+---
 
 
 ### **Summary**
