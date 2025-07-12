@@ -1,0 +1,540 @@
+---
+description: ADK: Guide for implementing the Agent Development Kit (ADK) with Python, covering core components, agent design patterns, safety, evaluation, and deployment.
+globs: 
+alwaysApply: false
+---
+# ADK: Python Implementation and Agent Design Guide
+
+This document provides guidelines and best practices for building applications using the Agent Development Kit (ADK) with Python. It covers core ADK components, agent design patterns, safety, evaluation, and deployment strategies. Always refer to the official ADK documentation for the most up-to-date and detailed information.
+
+## I. Core ADK Concepts in Python
+
+### A. Agents
+
+Agents are the fundamental execution units in ADK.
+
+1.  **`LlmAgent` (or `Agent`)**: For agents driven by Large Language Models (LLMs).
+    *   **Key Parameters**:
+        *   `name` (str): Unique identifier for the agent.
+        *   `model` (str or `LiteLlm` object): Specifies the LLM (e.g., `"gemini-2.0-flash"`, `LiteLlm(model="openai/gpt-4o")`).
+        *   `description` (str): AI-friendly summary of capabilities, used for delegation.
+        *   `instruction` (str): Detailed guidance for the LLM's behavior, persona, and tool usage. Supports `{state_variable}` and `{artifact.artifact_name}` templating.
+        *   `tools` (list): List of tool functions or `BaseTool` instances.
+        *   `output_key` (str, optional): If set, the agent's final response text is saved to `session.state[output_key]`.
+        *   `generate_content_config` (types.GenerateContentConfig, optional): Controls LLM generation parameters (temperature, max_output_tokens).
+        *   `input_schema`/`output_schema` (Pydantic BaseModel, optional): Define structured input/output. Using `output_schema` disables tool use and agent transfer.
+        *   `include_contents` (str, default: `'default'`): `'none'` to exclude conversation history.
+        *   `planner` / `code_executor` (optional): For advanced planning or code execution.
+    *   **Python Example**:
+        ```python
+        from google.adk.agents import Agent # LlmAgent is often aliased as Agent
+        from google.adk.models.lite_llm import LiteLlm # For non-Google models
+
+        def get_capital(country: str) -> str:
+            """Returns the capital of a country."""
+            # Mock implementation
+            capitals = {"France": "Paris", "Japan": "Tokyo"}
+            return capitals.get(country, "Unknown")
+
+        capital_agent = Agent(
+            name="CapitalFinderAgent",
+            model="gemini-2.0-flash", # or LiteLlm(model="openai/gpt-4o")
+            description="Provides the capital city of a given country.",
+            instruction="You are an expert geographer. Use the 'get_capital' tool to find capitals.",
+            tools=[get_capital],
+            output_key="found_capital"
+        )
+        ```
+    *   Reference: `docs/agents/llm-agents.md`
+
+2.  **Workflow Agents**: For orchestrating sub-agents without LLM-based flow control.
+    *   **`SequentialAgent`**: Executes sub-agents in the specified order. Output from one can be state input for the next.
+        ```python
+        from google.adk.agents import SequentialAgent, Agent
+
+        step1 = Agent(name="Step1", model="gemini-2.0-flash", instruction="Generate a topic.", output_key="topic")
+        step2 = Agent(name="Step2", model="gemini-2.0-flash", instruction="Write a sentence about the topic: {topic}.")
+        pipeline = SequentialAgent(name="MyPipeline", sub_agents=[step1, step2])
+        ```
+    *   **`ParallelAgent`**: Executes sub-agents concurrently. Results can be collected from state (use distinct `output_key`s).
+        ```python
+        from google.adk.agents import ParallelAgent, Agent
+
+        task_a = Agent(name="TaskA", model="gemini-2.0-flash", instruction="Research A.", output_key="result_a")
+        task_b = Agent(name="TaskB", model="gemini-2.0-flash", instruction="Research B.", output_key="result_b")
+        parallel_research = ParallelAgent(name="ResearchGroup", sub_agents=[task_a, task_b])
+        ```
+    *   **`LoopAgent`**: Executes sub-agents iteratively until `max_iterations` or an `Event.actions.escalate=True` signal.
+        ```python
+        from google.adk.agents import LoopAgent, Agent, BaseAgent
+        from google.adk.events import Event, EventActions
+        from google.adk.agents.invocation_context import InvocationContext
+        from typing import AsyncGenerator
+
+        class CheckDone(BaseAgent):
+            async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
+                if ctx.session.state.get("iterations", 0) >= 2:
+                    yield Event(author=self.name, actions=EventActions(escalate=True))
+                else:
+                    ctx.session.state["iterations"] = ctx.session.state.get("iterations", 0) + 1
+                    yield Event(author=self.name, content="Continuing loop.")
+
+        iteration_task = Agent(name="IterationTask", model="gemini-2.0-flash", instruction="Perform one iteration.")
+        loop = LoopAgent(name="MyLoop", sub_agents=[iteration_task, CheckDone(name="DoneChecker")], max_iterations=3)
+        ```
+    *   Reference: `docs/agents/workflow-agents/`
+
+3.  **Custom Agents**: For arbitrary orchestration logic by subclassing `BaseAgent` and implementing `_run_async_impl`.
+    *   The `_run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]` method defines the agent's behavior, allowing calls to sub-agents (`self.sub_agent.run_async(ctx)`) and yielding events.
+    *   State is managed via `ctx.session.state`.
+    *   **Python Example**:
+        ```python
+        from google.adk.agents import BaseAgent, LlmAgent, InvocationContext
+        from google.adk.events import Event, EventActions
+        from typing import AsyncGenerator
+
+        class ConditionalAgent(BaseAgent):
+            def __init__(self, name: str, agent_if_true: BaseAgent, agent_if_false: BaseAgent, **kwargs):
+                super().__init__(name=name, sub_agents=[agent_if_true, agent_if_false], **kwargs)
+                self.agent_if_true = agent_if_true
+                self.agent_if_false = agent_if_false
+
+            async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
+                condition = ctx.session.state.get("my_condition", False)
+                if condition:
+                    async for event in self.agent_if_true.run_async(ctx):
+                        yield event
+                else:
+                    async for event in self.agent_if_false.run_async(ctx):
+                        yield event
+        ```
+    *   Reference: `docs/agents/custom-agents.md`
+
+### B. Tools
+
+Tools extend agent capabilities.
+
+1.  **`FunctionTool`**: Wraps custom Python functions.
+    *   Parameters should be JSON-serializable. Type hints are crucial.
+    *   Return type **must be a dictionary**. If not, ADK wraps it as `{'result': <value>}`.
+    *   Docstrings are critical for the LLM to understand tool purpose, arguments, and return structure.
+    *   **Python Example**:
+        ```python
+        from google.adk.tools import FunctionTool
+
+        def get_current_time() -> dict:
+            """Returns the current time as a string."""
+            import datetime
+            return {"current_time": datetime.datetime.now().isoformat(), "status": "success"}
+
+        time_tool = FunctionTool(func=get_current_time)
+        # Agent can then use: tools=[time_tool]
+        ```
+    *   Reference: `docs/tools/function-tools.md#1-function-tool`
+
+2.  **`LongRunningFunctionTool`**: For asynchronous tasks that take time, yielding intermediate updates.
+    *   The wrapped function must be an `async def` and return an `AsyncGenerator`.
+    *   **Python Example**:
+        ```python
+        from google.adk.tools import LongRunningFunctionTool
+        import asyncio
+        from typing import AsyncGenerator
+
+        async def process_data_stream(job_id: str) -> AsyncGenerator[dict, None]:
+            """Processes a data stream, yielding progress updates."""
+            for i in range(5):
+                await asyncio.sleep(1)
+                yield {"job_id": job_id, "progress": (i + 1) * 20, "status": "running"}
+            yield {"job_id": job_id, "progress": 100, "status": "completed"}
+
+        streaming_tool = LongRunningFunctionTool(func=process_data_stream)
+        ```
+    *   Reference: `docs/tools/function-tools.md#2-long-running-function-tool`
+
+3.  **`AgentTool`**: Allows one agent to use another agent as a tool.
+    *   Useful for hierarchical task decomposition or specialized agent reuse.
+    *   **Python Example**:
+        ```python
+        from google.adk.tools import agent_tool
+        from google.adk.agents import Agent
+
+        summarizer_agent = Agent(name="Summarizer", model="gemini-2.0-flash", instruction="Summarize the given text.")
+        # ...
+        main_agent = Agent(
+            name="MainAgent",
+            model="gemini-2.0-flash",
+            instruction="Fetch data and then summarize it using the Summarizer tool.",
+            tools=[some_data_fetcher_tool, agent_tool.AgentTool(agent=summarizer_agent)]
+        )
+        ```
+    *   Reference: `docs/tools/function-tools.md#3-agent-as-a-tool`
+
+4.  **Built-in Tools**:
+    *   `google_search`: For web searches (Gemini 2 models). Requires proper display of suggestions.
+    *   `built_in_code_execution`: For code execution (Gemini 2 models).
+    *   `vertex_ai_search_tool`: For Vertex AI Search.
+    *   **Python Example**:
+        ```python
+        from google.adk.tools import google_search
+        from google.adk.agents import Agent
+
+        search_enabled_agent = Agent(
+            name="Searcher",
+            model="gemini-2.0-flash", # Ensure model supports the tool
+            instruction="Answer questions using Google Search.",
+            tools=[google_search]
+        )
+        ```
+    *   Reference: `docs/tools/built-in-tools.md`
+
+5.  **`OpenAPIToolset`**: Generates `RestApiTool` instances from an OpenAPI (v3.x) specification.
+    *   Initialize with spec string/dict and auth details if needed.
+    *   **Python Example**:
+        ```python
+        from google.adk.tools.openapi_tool.openapi_spec_parser.openapi_toolset import OpenAPIToolset
+        # Assume openapi_spec_json is a string containing your OpenAPI spec
+        # toolset = OpenAPIToolset(spec_str=openapi_spec_json, spec_str_type="json")
+        # api_tools = toolset.get_tools()
+        # agent = Agent(..., tools=api_tools)
+        ```
+    *   Reference: `docs/tools/openapi-tools.md`
+
+6.  **`MCPToolset`**: Integrates tools from Model Context Protocol (MCP) servers.
+    *   Connects to local or remote MCP servers.
+    *   **Python Example**:
+        ```python
+        from google.adk.tools.mcp_tool import MCPToolset, StdioServerParameters
+        # Example for a local filesystem MCP server
+        # mcp_tools = MCPToolset(
+        #     connection_params=StdioServerParameters(
+        #         command='npx',
+        #         args=["-y", "@modelcontextprotocol/server-filesystem", "/absolute/path/to/folder"]
+        #     )
+        # )
+        # agent = Agent(..., tools=[mcp_tools])
+        ```
+    *   Reference: `docs/tools/mcp-tools.md`
+
+7.  **Google Cloud Tools**:
+    *   `APIHubToolset`: For APIs documented in Apigee API Hub.
+    *   `ApplicationIntegrationToolset`: For Google Cloud Application Integration workflows or connectors.
+    *   Toolbox for Databases: Using `ToolboxSyncClient` to load tools from an MCP Toolbox server.
+    *   Reference: `docs/tools/google-cloud-tools.md`
+
+8.  **Third-Party Tools**:
+    *   `LangchainTool`: Wraps LangChain tools.
+    *   `CrewaiTool`: Wraps CrewAI tools.
+    *   **Python Example (LangChain)**:
+        ```python
+        from google.adk.tools.langchain_tool import LangchainTool
+        # from langchain_community.tools import TavilySearchResults # Example
+        # tavily_lc_tool = TavilySearchResults()
+        # adk_tavily_tool = LangchainTool(tool=tavily_lc_tool)
+        # agent = Agent(..., tools=[adk_tavily_tool])
+        ```
+    *   Reference: `docs/tools/third-party-tools.md`
+
+9.  **Tool Authentication**:
+    *   Configure `AuthScheme` and `AuthCredential` for tools needing auth (e.g., `OpenAPIToolset`).
+    *   Interactive OAuth flow is handled via `ToolContext.request_credential()` and `ToolContext.get_auth_response()`.
+    *   The `ToolContext` parameter must be the last one in a tool function signature.
+    *   **Python Example (conceptual within a tool function)**:
+        ```python
+        from google.adk.tools import ToolContext
+        from google.adk.auth import AuthConfig #, AuthCredential, AuthScheme...
+
+        # Define MY_API_AUTH_CONFIG based on API needs
+        # MY_API_AUTH_CONFIG = AuthConfig(auth_scheme=..., raw_auth_credential=...)
+
+        def my_secure_tool(param: str, tool_context: ToolContext) -> dict:
+            # token = tool_context.state.get("my_api_token")
+            # if not token:
+            #     auth_response = tool_context.get_auth_response(MY_API_AUTH_CONFIG)
+            #     if auth_response and auth_response.oauth2 and auth_response.oauth2.access_token:
+            #         token = auth_response.oauth2.access_token
+            #         tool_context.state["my_api_token"] = token
+            #     else:
+            #         tool_context.request_credential(MY_API_AUTH_CONFIG)
+            #         return {"status": "authentication_required"}
+            # # Use token for API call
+            return {"result": "authenticated data"}
+        ```
+    *   Reference: `docs/tools/authentication.md`
+
+### C. Callbacks
+
+Callbacks hook into the agent's execution lifecycle.
+
+1.  **Purpose**: Observe, customize, and control agent behavior without modifying core ADK code.
+2.  **Types**:
+    *   `before_agent_callback(callback_context: CallbackContext)`
+    *   `after_agent_callback(callback_context: CallbackContext, agent_response: types.Content)`
+    *   `before_model_callback(callback_context: CallbackContext, llm_request: LlmRequest)`
+    *   `after_model_callback(callback_context: CallbackContext, llm_response: LlmResponse)`
+    *   `before_tool_callback(callback_context: CallbackContext, tool: BaseTool, args: dict, tool_context: ToolContext)`
+    *   `after_tool_callback(callback_context: CallbackContext, tool: BaseTool, tool_response: dict, tool_context: ToolContext)`
+3.  **Mechanism**:
+    *   Receive a `CallbackContext` (or `ToolContext` for tool callbacks).
+    *   Return `None` to allow default behavior.
+    *   Return a specific object (e.g., `LlmResponse` from `before_model_callback`, `dict` from `before_tool_callback`) to override default behavior and skip the next step.
+4.  **Python Example (Input Guardrail)**:
+    ```python
+    from google.adk.agents.callback_context import CallbackContext
+    from google.adk.models.llm_request import LlmRequest
+    from google.adk.models.llm_response import LlmResponse
+    from google.genai import types
+    from typing import Optional
+
+    def block_sensitive_topics(cb_ctx: CallbackContext, request: LlmRequest) -> Optional[LlmResponse]:
+        user_input = request.contents[-1].parts[0].text if request.contents and request.contents[-1].role == "user" else ""
+        if "politics" in user_input.lower():
+            cb_ctx.state["blocked_topic"] = "politics" # Example state update
+            return LlmResponse(content=types.Content(parts=[types.Part(text="I cannot discuss political topics.")]))
+        return None
+
+    # agent = Agent(..., before_model_callback=block_sensitive_topics)
+    ```
+5.  Reference: `docs/callbacks/`
+
+### D. Session, State, and Memory
+
+1.  **`Session`**: Tracks a single conversation (events, state). Managed by `SessionService`.
+    *   Properties: `id`, `appName`, `userId`, `events` (list of `Event`), `state`, `lastUpdateTime`.
+2.  **`State` (`session.state`)**: Serializable key-value dictionary for session-specific data.
+    *   **Prefixes for Scope**:
+        *   No prefix: Session-specific.
+        *   `user:`: User-specific across sessions (with persistent `SessionService`).
+        *   `app:`: App-specific across users/sessions (with persistent `SessionService`).
+        *   `temp:`: Temporary, discarded after invocation.
+    *   **Updating State**:
+        *   **`output_key` on `Agent`**: Agent's final text response saved to `state[output_key]`.
+        *   **`EventActions.state_delta`**: Manually construct `EventActions(state_delta={"key": "value"})` and include in a yielded `Event`. `SessionService.append_event` applies this delta.
+    *   **Python Example (Reading/Writing in Tool)**:
+        ```python
+        from google.adk.tools import ToolContext
+
+        def update_user_pref_tool(pref_name: str, pref_value: str, tool_context: ToolContext) -> dict:
+            """Updates a user preference in session state."""
+            state_key = f"user:{pref_name}" # User-scoped state
+            tool_context.state[state_key] = pref_value
+            # Previous value example: old_value = tool_context.state.get(state_key, "Not set")
+            return {"status": "success", f"{pref_name}_updated_to": pref_value}
+        ```
+    *   Reference: `docs/sessions/state.md`
+
+3.  **`MemoryService`**: For long-term, searchable knowledge across sessions (Python only for now).
+    *   Implementations: `InMemoryMemoryService`, `VertexAiRagMemoryService`.
+    *   Key Methods: `add_session_to_memory(session)`, `search_memory(app_name, user_id, query)`.
+    *   Typically used via a tool like `load_memory`.
+    *   **Python Example**:
+        ```python
+        from google.adk.memory import InMemoryMemoryService
+        from google.adk.tools import load_memory # Built-in tool
+        # memory_service = InMemoryMemoryService()
+        # runner = Runner(..., memory_service=memory_service)
+        # agent_with_memory = Agent(..., tools=[load_memory])
+        # After a session: await memory_service.add_session_to_memory(completed_session)
+        # Agent instruction: "Use load_memory tool to recall past info."
+        ```
+    *   Reference: `docs/sessions/memory.md`
+
+### E. Events
+
+Events are immutable records of occurrences during an agent's interaction.
+
+1.  **Structure**: `author` (e.g., 'user', agent name), `invocation_id`, `id`, `timestamp`, `content` (text, `function_call`, `function_response`), `actions`.
+2.  **`Event.actions`**: Carries `state_delta`, `artifact_delta`, control signals (`transfer_to_agent`, `escalate`, `skip_summarization`).
+3.  **`event.is_final_response()`**: Helper to identify user-facing final messages for a turn.
+4.  **Interpreting Events (Python)**:
+    ```python
+    # async for event in runner.run_async(...):
+    #     if event.is_final_response():
+    #         if event.content and event.content.parts and event.content.parts[0].text:
+    #             print(f"Final Text: {event.content.parts[0].text}")
+    #     if event.get_function_calls():
+    #         for call in event.get_function_calls():
+    #             print(f"Tool Call: {call.name} with args {call.args}")
+    #     if event.actions and event.actions.state_delta:
+    #         print(f"State Changed: {event.actions.state_delta}")
+    ```
+5.  Reference: `docs/events/index.md`
+
+### F. Runtime & `RunConfig`
+
+1.  **`Runner`**: Orchestrates agent execution via an event loop. `Runner.run_async()` is primary.
+2.  **`RunConfig`**: Customizes runtime behavior passed to `Runner.run_live()` or `Runner.run_async()`.
+    *   `speech_config` (types.SpeechConfig): For voice synthesis.
+    *   `response_modalities` (list[str]): E.g., `["TEXT", "AUDIO"]`.
+    *   `streaming_mode` (StreamingMode): `NONE`, `SSE`, `BIDI`.
+    *   `max_llm_calls` (int): Limit LLM calls per run.
+    *   `support_cfc` (bool, Python only): For Compositional Function Calling.
+    *   **Python Example**:
+        ```python
+        from google.adk.agents.run_config import RunConfig, StreamingMode
+        from google.genai import types
+
+        live_run_config = RunConfig(
+            streaming_mode=StreamingMode.BIDI,
+            response_modalities=["AUDIO", "TEXT"],
+            speech_config=types.SpeechConfig(language_code="en-US")
+        )
+        # async for event in runner.run_live(..., run_config=live_run_config):
+        #    pass
+        ```
+3.  Reference: `docs/runtime/index.md`, `docs/runtime/runconfig.md`
+
+### G. Artifacts
+
+Manage named, versioned binary data (files, images).
+
+1.  **`ArtifactService`**: `InMemoryArtifactService` (ephemeral), `GcsArtifactService` (persistent). Configured on `Runner`.
+2.  **Interaction via Context**: `CallbackContext` or `ToolContext` provide:
+    *   `save_artifact(filename: str, artifact: types.Part) -> int` (returns version)
+    *   `load_artifact(filename: str, version: Optional[int] = None) -> Optional[types.Part]`
+    *   `list_artifacts() -> list[str]`
+3.  Artifacts are `google.genai.types.Part` objects with `inline_data` (Blob with `data: bytes`, `mime_type: str`).
+4.  **Python Example (Saving in a tool)**:
+    ```python
+    from google.adk.tools import ToolContext
+    from google.genai import types
+
+    def generate_report_tool(tool_context: ToolContext) -> dict:
+        report_bytes = b"PDF content example"
+        report_part = types.Part.from_data(data=report_bytes, mime_type="application/pdf")
+        version = tool_context.save_artifact("monthly_report.pdf", report_part)
+        return {"report_generated": "monthly_report.pdf", "version": version}
+    ```
+5.  Reference: `docs/artifacts/index.md`
+
+### H. Streaming (Python only for advanced features)
+
+Enables real-time, interactive experiences.
+
+1.  **`Runner.run_live()`**: Used for bidirectional streaming.
+2.  **`LiveRequestQueue`**: Queue for sending real-time inputs (text, audio blobs) to the agent during a `run_live` session.
+3.  **Streaming Tools**: `async def` functions returning `AsyncGenerator[<yield_type>, None]`.
+    *   Can `yield` intermediate results.
+    *   For video streaming, a special `input_stream: LiveRequestQueue` parameter is required to receive video frames.
+    *   **Python Example (Simple Streaming Tool)**:
+        ```python
+        import asyncio
+        from typing import AsyncGenerator
+
+        async def count_down_tool(start_number: int) -> AsyncGenerator[str, None]:
+            """Counts down from a number, yielding each step."""
+            for i in range(start_number, 0, -1):
+                yield f"Countdown: {i}"
+                await asyncio.sleep(1)
+            yield "Blast off!"
+        ```
+4.  Reference: `docs/streaming/`
+
+## II. Agent Design Best Practices (Python)
+
+### A. Choosing Agent Types
+
+*   **`LlmAgent`**: For tasks requiring reasoning, understanding natural language, dynamic decision-making, and tool use.
+*   **Workflow Agents (`SequentialAgent`, `ParallelAgent`, `LoopAgent`)**: For predefined, deterministic control over sub-agent execution flow. Use when the sequence or pattern of operations is known.
+*   **Custom Agents (`BaseAgent` subclass)**: When you need highly specific, non-standard orchestration logic, complex state management beyond simple passing, or direct integration of external libraries within the flow control.
+
+### B. Multi-Agent Systems
+
+Design modular applications by composing specialized agents.
+*   **Coordinator/Dispatcher Pattern**: A root `LlmAgent` delegates tasks to specialized sub-agents based on user intent. Sub-agents need clear `description`s. Root agent's `instruction` guides delegation.
+    ```python
+    # billing_agent = Agent(name="Billing", description="Handles billing inquiries.")
+    # support_agent = Agent(name="Support", description="Handles tech support.")
+    # coordinator = Agent(
+    #     name="HelpDesk",
+    #     instruction="Route to Billing for payment issues, Support for tech problems.",
+    #     sub_agents=[billing_agent, support_agent]
+    # )
+    ```
+*   **Sequential Pipeline**: Use `SequentialAgent` for multi-step processes where output of one step feeds the next (via session state and `output_key` or explicit state updates).
+*   **Parallel Fan-Out/Gather**: Use `ParallelAgent` for concurrent independent tasks, followed by a step (often in a `SequentialAgent`) to aggregate results from state.
+*   **Hierarchical Task Decomposition**: A multi-level tree of agents where higher-level agents break down complex goals and delegate to lower-level agents (often using `AgentTool`).
+*   **Review/Critique (Generator-Critic)**: A `SequentialAgent` with a generator agent followed by a reviewer/critic agent. Data passed via state.
+*   **Iterative Refinement**: `LoopAgent` containing agents that progressively improve a result in session state until a condition is met (checked by a sub-agent or `max_iterations`).
+*   Reference: `docs/agents/multi-agents.md`
+
+### C. Tool Design Principles
+
+*   **Clear Naming**: Function names should be descriptive (verb-noun).
+*   **Comprehensive Docstrings**: Critical for LLM understanding. Explain purpose, when to use, arguments, and return structure (including `status` and error states).
+*   **JSON-Serializable Parameters**: Use basic Python types. Provide type hints.
+*   **Dictionary Return Types**: Tools **must** return a `dict`. Include a `status` key.
+*   **Focused Responsibility**: Each tool should perform one well-defined task.
+*   **`ToolContext`**: If a tool needs access to session state, artifact services, or auth, include `tool_context: ToolContext` as the last parameter in its signature. Do *not* describe `tool_context` in the docstring.
+
+### D. State Management Strategies
+
+*   **Minimalism**: Store only essential dynamic data in `session.state`.
+*   **Serialization**: Ensure all state values are JSON-serializable.
+*   **Prefixes**: Use `user:`, `app:`, `temp:` prefixes for clarity and to control scope/persistence with appropriate `SessionService` implementations.
+*   **Update Flow**: Always update state via `output_key` on `Agent` or by including `state_delta` in `EventActions` when `SessionService.append_event()` is called. Avoid direct modification of `retrieved_session.state`.
+
+### E. Safety and Security
+
+*   **Identity and Authorization**:
+    *   Agent-Auth: Tool uses agent's identity (e.g., service account). Good for shared access.
+    *   User-Auth: Tool uses end-user's identity (e.g., OAuth). Good for enforcing user-specific permissions.
+*   **Guardrails**:
+    *   **In-Tool Guardrails**: Design tools defensively. Validate parameters passed by LLM against policies or state accessible via `ToolContext`.
+    *   **Gemini Safety Features**: Leverage built-in content filters and system instructions if using Gemini models.
+    *   **Callbacks**:
+        *   `before_model_callback`: Inspect/block LLM requests.
+        *   `before_tool_callback`: Inspect/block tool calls or modify arguments.
+    *   **LLM as Guardrail**: Use a fast/cheap LLM (e.g., Gemini Flash) in a callback to screen inputs/outputs against custom policies.
+*   **Sandboxed Code Execution**: Use `BuiltInCodeExecutor` or Vertex AI Code Interpreter for safe execution of model-generated code. For custom executors, ensure hermetic, isolated environments.
+*   **Network Controls**: Use VPC Service Controls if deploying on GCP to restrict network access and prevent data exfiltration.
+*   **Escape UI Output**: Properly escape any model-generated content displayed in UIs to prevent XSS or other injection attacks.
+*   Reference: `docs/safety/index.md`
+
+## III. Evaluation and Deployment (Python Focus)
+
+### A. Evaluation (Python only)
+
+ADK provides tools for evaluating agent performance.
+*   **Focus**: Evaluate both final response quality and the agent's execution trajectory (tool use).
+*   **Test Files (`.test.json`)**: Define evaluation cases with user content, expected tool trajectory, and expected final response. Schema based on Pydantic models `EvalSet` and `EvalCase`.
+*   **`AgentEvaluator.evaluate()`**: Programmatically run evaluations against test files or directories.
+    ```python
+    from google.adk.evaluation.agent_evaluator import AgentEvaluator
+    # AgentEvaluator.evaluate(
+    #     agent_module="my_agent_package_path", # Path to agent's __init__.py's parent dir
+    #     eval_dataset_file_path_or_dir="path/to/my_evals.test.json"
+    # )
+    ```
+*   **`adk eval` CLI**: Run evaluations from the command line.
+*   **Evaluation Criteria (`test_config.json`)**: Define metrics like `tool_trajectory_avg_score` and `response_match_score`.
+*   Reference: `docs/evaluate/index.md`
+
+### B. Deployment (Python)
+
+ADK agents can be deployed to various environments.
+
+1.  **Vertex AI Agent Engine**: Fully managed service for deploying ADK agents.
+    *   Use `vertexai.agent_engines.create(agent_engine=root_agent, requirements=[...])`.
+    *   Requires `google-cloud-aiplatform[adk,agent_engines]`.
+    *   Reference: `docs/deploy/agent-engine.md`
+
+2.  **Google Cloud Run**: Deploy as a containerized application.
+    *   **`adk deploy cloud_run`**: CLI command to simplify deployment.
+        ```bash
+        # adk deploy cloud_run --project=$GCP_PROJECT --region=$GCP_REGION ./my_agent_folder
+        ```
+    *   **Manual `gcloud run deploy`**: Use with a `Dockerfile` and a FastAPI entry point (`main.py` using `google.adk.cli.fast_api.get_fast_api_app`).
+    *   Reference: `docs/deploy/cloud-run.md`
+
+3.  **Google Kubernetes Engine (GKE)**: Deploy as a containerized application in a GKE cluster.
+    *   Requires `Dockerfile`, `main.py` (FastAPI), and Kubernetes manifests (`deployment.yaml`, `service.yaml`).
+    *   Build and push Docker image to Artifact Registry.
+    *   Use `kubectl apply -f ...` to deploy.
+    *   Configure Kubernetes service accounts for Workload Identity if accessing GCP services.
+    *   Reference: `docs/deploy/gke.md`
+
+**General Python Deployment Considerations**:
+*   Ensure all dependencies are in `requirements.txt`.
+*   Manage API keys and sensitive configurations securely (e.g., environment variables, secret managers).
+*   Use persistent `SessionService` (e.g., `DatabaseSessionService` or `VertexAiSessionService` if using Agent Engine) for production.
+```

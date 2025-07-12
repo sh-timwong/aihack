@@ -1,0 +1,84 @@
+---
+description: Implementation Plan MDC - Guidelines for creating a detailed, sprint-based technical implementation plan linked to requirements and Jira tasks.
+globs: 
+alwaysApply: false
+---
+# Implementation Plan Guidelines (Project & Epic Scope)
+
+This document provides guidelines for creating and updating technical implementation plans, which exist at two levels:
+1.  **Project Level:** An overarching plan or roadmap, potentially integrated into dedicated `docs/6-ImplementationPlan.md`. It outlines major phases, milestones, and potentially high-level sprint goals across epics.
+2.  **Epic Specific:** Detailed, sprint-based technical plans within epic folders (e.g., `docs/epics/<EPIC_KEY>/6-ImplementationPlan.md`). These translate the specific epic's requirements into actionable tasks for development sprints, linking directly to Jira issues within that epic.
+
+The goal is to provide both a high-level project trajectory and detailed, traceable plans for individual epics.
+
+## Purpose
+
+*   **Project Level:** Provide a strategic overview of the development timeline and major deliverables.
+*   **Epic Level:**
+    *   Define the technical strategy and steps required to implement the requirements specified in the **Epic's PRD** ([1-PRD.md](mdc:docs/epics/<EPIC_KEY>/1-PRD.md)).
+    *   Break down the epic's features/stories into detailed technical tasks for development sprints, referencing or aligning with tasks defined in the master Jira Task List (`docs/0-JiraTaskList.md` or similar) that are linked to this epic.
+    *   Align with the **Epic's AppFlow** ([2-AppFlow.md](mdc:docs/epics/<EPIC_KEY>/2-AppFlow.md)), **Epic Technical Overview** ([3-TechnicalOverview.md](mdc:docs/epics/<EPIC_KEY>/3-TechnicalOverview.md)), and **Epic Backend/Frontend Structure** ([5-BackendStructure.md](mdc:docs/epics/<EPIC_KEY>/5-BackendStructure.md), [4-FrontendStructure.md](mdc:docs/epics/<EPIC_KEY>/4-FrontendStructure.md)) documentation.
+    *   Provide **clear and consistent linkage** between implementation tasks within this plan and the specific Jira tickets belonging to the epic for robust traceability and progress tracking.
+    *   Serve as a living document, updated iteratively throughout the epic's development lifecycle.
+
+## Structure of the Epic `6-ImplementationPlan.md`
+
+The implementation plan for a specific epic should be organized into the following sections:
+
+1.  **Introduction**
+    -   Brief overview of the epic and the purpose of *this specific technical plan*. Link to the project-level plan/roadmap if it exists.
+    -   Link to the primary **Epic PRD** ([1-PRD.md](mdc:docs/epics/<EPIC_KEY>/1-PRD.md)).
+
+2.  **High-Level Goals & Scope (Epic)**
+    -   Summarize the main business and technical goals *of this epic*.
+    -   Reference the relevant sections of the **Epic PRD**.
+
+3.  **Technical Approach Summary (Epic)**
+    -   Briefly summarize key architectural decisions relevant to *this epic's* implementation.
+    *   Link to the **Epic Technical Overview** ([3-TechnicalOverview.md](mdc:docs/epics/<EPIC_KEY>/3-TechnicalOverview.md)), **Epic Backend Structure** ([5-BackendStructure.md](mdc:docs/epics/<EPIC_KEY>/5-BackendStructure.md)), and **Epic Frontend Structure** ([4-FrontendStructure.md](mdc:docs/epics/<EPIC_KEY>/4-FrontendStructure.md)) for detailed information.
+
+4.  **Sprint Plan (Detailing Epic Tasks)**
+    -   Organize the technical work *for this epic* into sprints. Add a new subsection for each sprint where epic tasks are planned.
+    -   **Sprint X (Dates: Start Date to End Date)**
+        -   **Sprint Goal (Epic Contribution):** Clearly state the primary objective *for this epic's work* within the sprint.
+        -   **Scope (User Stories/Features from Epic):** List the specific User Stories (e.g., `US-XXX` from Epic PRD) or high-level features *from this epic* targeted in this sprint. Link to the **Epic PRD** section.
+        -   **Technical Breakdown (Epic Tasks):**
+            -   **(Repeat per Feature/User Story or logical task group within the epic)**
+            -   **Feature/User Story:** (e.g., Unique Identifier from Epic PRD)
+                -   **Jira Task(s):** `[EPICKEY-TASKID, EPICKEY-OTHERID]` (Provide direct links or keys. **Crucial for tracking epic progress.**)
+                -   **Description:** Briefly describe the technical objective related to the epic.
+                -   **Affected Components:** List specific code modules, classes, functions, or files impacted *by this epic task* (e.g., `path/to/module.py`, `relevant_service.class`). Refer to the **Epic Backend/Frontend Structure** docs.
+                -   **API Changes:** Detail any new or modified API endpoints related to the epic task (e.g., `/api/resource/{id}`). Refer to **Epic Backend Structure**.
+                -   **Database Changes:** Specify schema modifications, new collections/tables, fields, or indexes needed *for this epic task*. Refer to **Epic Backend Structure**.
+                -   **External Integrations:** Note interactions with external services relevant to the epic task.
+                -   **Key Implementation Steps:** Provide a bulleted list of concrete development tasks for the epic feature (e.g., "Implement `NodeName`," "Define `ResponseModel`," "Add unit tests for `ServiceName.method_name`").
+                -   **Acceptance Criteria (Technical):** Define how to verify the technical completion *for this epic task* (e.g., "All related unit tests pass," "API endpoint returns expected structure").
+            -   **Infrastructure/Setup Tasks (for Epic):** (If applicable)
+                -   **Jira Task(s):** `[EPICKEY-INFRAID]`
+                -   **Task Description:** (e.g., Configure mock service for epic testing, Update Dockerfile for epic dependency).
+                -   **Acceptance Criteria:** (e.g., Mock service responds, Container builds).
+        -   **Deliverables (Epic Contribution):** List the key tangible outcomes *for the epic* delivered in this sprint.
+        -   **Milestones (Optional, Epic Context):** Note any key internal deadlines for the epic's work within the sprint.
+
+5.  **Cross-Cutting Concerns (Epic Context)**
+    -   **Testing Strategy:** Outline the testing approach *for this epic's features*.
+    -   **Logging & Monitoring:** Specify logging/monitoring needs *for the epic's components*.
+    -   **Security Implementation:** Detail specific security tasks undertaken *for this epic*.
+    -   **Deployment:** Describe the process for deploying *the epic's changes*.
+
+6.  **Risk Management (Epic Technical)**
+    -   Identify potential technical risks related *to this epic's implementation*.
+    -   Outline mitigation strategies.
+
+7.  **Change Log**
+    -   Maintain a log of significant changes made *to this epic's implementation plan document itself*.
+
+## Best Practices for Updating
+
+-   **Consult Both Levels:** Refer to the project-level plan for overall direction and the epic-specific PRD/Technical docs for feature details.
+-   **Source Documents:** Always refer back to the epic's specific **[1-PRD.md](mdc:docs/epics/<EPIC_KEY>/1-PRD.md)**, **[2-AppFlow.md](mdc:docs/epics/<EPIC_KEY>/2-AppFlow.md)**, **[3-TechnicalOverview.md](mdc:docs/epics/<EPIC_KEY>/3-TechnicalOverview.md)**, **[5-BackendStructure.md](mdc:docs/epics/<EPIC_KEY>/5-BackendStructure.md)**, **[4-FrontendStructure.md](mdc:docs/epics/<EPIC_KEY>/4-FrontendStructure.md)**, and the main Jira Task List document when detailing technical tasks.
+-   **Granularity (Epic Level):** Aim for task descriptions that are concrete for implementing the epic's features.
+-   **Jira Linking (Epic Level):** **Crucially**, ensure every significant piece of work described in the epic plan is accurately linked to one or more Jira tasks *belonging to this epic* using consistent keys (`[EPICKEY-TASKID]`).
+-   **Sprint Updates (Epic Level):** Before starting a new sprint containing work for this epic, update its section. Review and update the plan at the end of each sprint to reflect epic progress, scope changes, or new tasks.
+-   **Version Control:** Commit changes to *both* project-level and epic-specific plan documents frequently, linking commits to relevant Jira tasks.
+-   **Collaboration:** Use pull/merge requests for major updates to plans.

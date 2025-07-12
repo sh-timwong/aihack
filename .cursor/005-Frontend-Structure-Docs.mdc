@@ -1,0 +1,46 @@
+---
+description: Guidelines for creating comprehensive frontend structure documentation for Jira Epics, covering component architecture, state management, routing, API integration, styling, and testing. Inspired by epic-specific documentation blueprints.
+globs: 
+alwaysApply: false
+---
+# Guide: Documenting Epic-Specific Frontend Structure
+
+This rule provides guidelines for creating documentation detailing the frontend structure (components, state management, routing, etc.) specifically related to a Jira Epic. This document is typically located within the epic's folder, for example, at `docs/epics/<EPIC_KEY>/4-FrontendStructure.md`.
+
+## 1. Purpose
+
+The Frontend Structure document for an epic explains *how* the user interface components and logic, as defined in the epic's AppFlow ([2-AppFlow.md](mdc:docs/epics/<EPIC_KEY>/2-AppFlow.md)) and required by the epic's PRD ([1-PRD.md](mdc:docs/epics/<EPIC_KEY>/1-PRD.md)), are technically implemented within the frontend codebase.
+
+## 2. Key Sections
+
+Tailor these sections to the specific needs and complexity of the epic's frontend work:
+
+*   **Overview & Technology:** Briefly reiterate the main frontend technologies (React, Vue, Angular, etc.) and state management solutions (Redux, Zustand, Vuex, etc.) used for this epic's features.
+*   **Folder Structure:** Outline the relevant directory structure within the frontend codebase where the epic's components and logic reside (e.g., `src/features/epic-feature/`, `src/components/shared/new-component.tsx`).
+*   **Core Components:** Detail the key new or significantly modified frontend components created for this epic.
+    *   Component Name & Path
+    *   Purpose/Responsibility within the epic's UI
+    *   Props/Inputs
+    *   State Management (if applicable)
+    *   Key Interactions/Events Handled
+*   **Routing:** Describe any new routes added or modifications to the routing configuration related to the epic's features.
+*   **State Management:** Explain how global or feature-specific state related to the epic is managed. Detail relevant stores, reducers, actions, or contexts.
+*   **API Integration:** Describe how the frontend components interact with the backend API for the epic's features. Mention relevant API client methods, data fetching strategies (e.g., hooks, services), and data transformation.
+*   **Styling:** Note any specific styling approaches, new CSS modules, utility classes, or component library usage relevant to the epic.
+*   **Testing:** Briefly mention the testing approach for the epic's frontend components (e.g., unit tests with Jest/React Testing Library, E2E tests with Cypress targeting specific flows).
+
+## 3. Relationship to Other Documents
+
+This document relates closely to others within the same epic folder:
+
+*   **Epic AppFlow ([2-AppFlow.md](mdc:docs/epics/<EPIC_KEY>/2-AppFlow.md)):** Defines the UI/UX that this structure implements.
+*   **Epic PRD ([1-PRD.md](mdc:docs/epics/<EPIC_KEY>/1-PRD.md)):** Contains the requirements driving the need for these frontend elements.
+*   **Epic Technical Overview ([3-TechnicalOverview.md](mdc:docs/epics/<EPIC_KEY>/3-TechnicalOverview.md)):** Provides the broader context into which this frontend structure fits.
+*   **Epic Implementation Plan ([6-ImplementationPlan.md](mdc:docs/epics/<EPIC_KEY>/6-ImplementationPlan.md)):** Lists the specific tasks involved in building this frontend structure.
+
+## 4. Best Practices
+
+*   **Focus on the Epic:** Keep the documentation scoped to the changes and additions relevant to the specific epic.
+*   **Link to Code:** Provide clear references or links to the actual source code files and directories.
+*   **Visuals:** Use diagrams (e.g., component hierarchy) if they aid understanding.
+*   **Keep Updated:** Ensure the document reflects the final implementation for the epic.

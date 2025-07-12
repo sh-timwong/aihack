@@ -1,0 +1,901 @@
+---
+description: Python: Guidelines and best practices for using the Langfuse Python SDK, including initialization, tracing (decorators, low-level SDK), integrations (OpenAI, Langchain, etc.), scoring, and prompt management.
+globs: 
+alwaysApply: false
+---
+# Langfuse Python SDK Best Practices
+
+This guide provides rules and best practices for using the Langfuse Python SDK within this project. Adhering to these guidelines ensures consistent and effective tracing and observability.
+
+## 1. Initialization and Configuration
+
+Proper initialization is crucial for Langfuse to capture data.
+
+### 1.1. Using Environment Variables (Recommended)
+
+Store your Langfuse API keys and host URL securely in environment variables. Do **NOT** hardcode keys directly in the source code.
+
+**Good:**
+```python
+import os
+from langfuse import Langfuse
+
+# Ensure these environment variables are set in your deployment environment
+# os.environ["LANGFUSE_PUBLIC_KEY"] = "pk-lf-..." # Replace with your actual key
+# os.environ["LANGFUSE_SECRET_KEY"] = "sk-lf-..." # Replace with your actual key
+# os.environ["LANGFUSE_HOST"] = "https://cloud.langfuse.com" # Or your region/self-hosted URL
+
+# Langfuse client automatically reads credentials from environment variables
+langfuse = Langfuse()
+
+# Optional: Verify connection (useful for debugging, avoid in production hotspots)
+try:
+    langfuse.auth_check()
+    print("Langfuse connection successful.")
+except Exception as e:
+    print(f"Langfuse connection failed: {e}")
+
+```
+
+**Bad:**
+```python
+from langfuse import Langfuse
+
+# Avoid hardcoding keys!
+langfuse = Langfuse(
+    public_key="pk-lf-THIS_IS_BAD",
+    secret_key="sk-lf-THIS_IS_VERY_BAD",
+    host="https://cloud.langfuse.com"
+)
+```
+
+### 1.2. Programmatic Configuration (Use with Caution)
+
+If environment variables are not feasible, configure programmatically early in your application startup.
+
+```python
+from langfuse.decorators import langfuse_context
+
+# Call this *before* any decorated functions are executed
+langfuse_context.configure(
+    public_key="pk-lf-...", # Preferably load from a secure config source
+    secret_key="sk-lf-...", # Preferably load from a secure config source
+    host="https://cloud.langfuse.com", # Or your region/self-hosted URL
+    # Other options like 'release', 'sample_rate', 'environment' can be set here too
+)
+
+# Optional: Verify connection
+assert langfuse_context.auth_check()
+```
+
+## 2. Tracing Core Concepts
+
+Langfuse offers decorators for automatic tracing and a low-level SDK for manual control.
+
+### 2.1. Using Decorators (`@observe`)
+
+The `@observe()` decorator is the simplest way to trace function execution.
+
+**Basic Usage:**
+Decorate functions to automatically create traces (for the top-level decorated function) and spans (for nested decorated functions).
+
+```python
+from langfuse.decorators import observe
+import time
+
+@observe()
+def wait():
+    time.sleep(0.1)
+
+@observe()
+def capitalize(input: str):
+    return input.upper()
+
+@observe() # This creates the root trace
+def main_fn(query: str):
+    wait() # This creates a span nested under main_fn
+    capitalized = capitalize(query) # This also creates a nested span
+    return f"Q:{capitalized}; A: nice too meet you!"
+
+main_fn("hi there");
+```
+
+**Tracing LLM Calls:**
+Use `as_type="generation"` to specifically mark functions that make LLM calls. Update observation details using `langfuse_context`.
+
+```python
+from langfuse.decorators import langfuse_context, observe
+# Assume anthropic_client is initialized elsewhere
+import anthropic
+anthropic_client = anthropic.Anthropic() # Replace with your init
+
+@observe(as_type="generation")
+def anthropic_completion(**kwargs):
+  kwargs_clone = kwargs.copy()
+  input_messages = kwargs_clone.pop('messages', None)
+  model = kwargs_clone.pop('model', None)
+
+  # Log input/model params before the call
+  langfuse_context.update_current_observation(
+      input=input_messages,
+      model=model,
+      metadata=kwargs_clone # Log other params as metadata
+  )
+
+  response = anthropic_client.messages.create(**kwargs)
+
+  # Log output/usage after the call
+  langfuse_context.update_current_observation(
+      output=response.content[0].text,
+      usage_details={ # Or use OpenAI structure: {"prompt_tokens": ..., "completion_tokens": ...}
+          "input": response.usage.input_tokens,
+          "output": response.usage.output_tokens
+      }
+      # Optionally add cost_details={"input": ..., "output": ...}
+  )
+  return response.content[0].text
+
+@observe()
+def main_anthropic():
+  return anthropic_completion(
+      model="claude-3-opus-20240229",
+      max_tokens=1024,
+      messages=[
+          {"role": "user", "content": "Hello, Claude"}
+      ]
+  )
+
+main_anthropic()
+```
+
+**Async Functions:**
+Decorators work seamlessly with `async def` functions.
+
+```python
+from langfuse.decorators import langfuse_context, observe
+import asyncio
+# Assume async_mistral_client is initialized elsewhere
+
+@observe(as_type="generation")
+async def async_mistral_completion(**kwargs):
+  # ... (similar logic as sync example using langfuse_context.update_current_observation) ...
+  # res = await async_mistral_client.chat.complete_async(**kwargs)
+  # ... (update observation with output/usage) ...
+  return "mock async response" # Replace with actual call
+
+@observe()
+async def async_main():
+  response = await async_mistral_completion(model="mistral-small-latest", messages=[{"role": "user", "content": "Async hello"}])
+  return response
+
+# asyncio.run(async_main()) # Uncomment to run
+```
+
+**Updating Trace/Observation Context:**
+Use `langfuse_context` within decorated functions to add details.
+
+```python
+from langfuse.decorators import langfuse_context, observe
+
+@observe()
+def deeply_nested_fn():
+    langfuse_context.update_current_observation(
+        name="Custom Observation Name",
+        input="Custom Input",
+        output="Custom Output",
+        level="WARNING", # e.g., DEBUG, DEFAULT, WARNING, ERROR
+        status_message="Something noteworthy happened"
+    )
+    langfuse_context.update_current_trace(
+        name="Custom Trace Name",
+        user_id="user-xyz",
+        session_id="session-123",
+        tags=["important", "processed"],
+        metadata={"key": "value"},
+        release="v1.1.0",
+        public=False # Default is False
+    )
+    return "original output" # This is overridden by update_current_observation
+
+@observe()
+def main_context():
+    deeply_nested_fn()
+    # Get IDs or URL for logging/correlation
+    trace_id = langfuse_context.get_current_trace_id()
+    obs_id = langfuse_context.get_current_observation_id()
+    trace_url = langfuse_context.get_current_trace_url()
+    print(f"Trace URL: {trace_url}")
+
+main_context()
+```
+
+**Controlling Input/Output Capture:**
+Disable automatic capture for sensitive data. You can still log manually using `update_current_observation`.
+
+```python
+from langfuse.decorators import langfuse_context, observe
+
+@observe(capture_input=False, capture_output=False)
+def process_sensitive_data(secret: str):
+    # Process secret
+    result = "processed"
+    langfuse_context.update_current_observation(
+        input="<REDACTED>", # Log sanitized input
+        output=result       # Log safe output
+    )
+    return "original sensitive result" # This return value is not logged
+
+process_sensitive_data("SECRET_API_KEY")
+```
+
+**Threading (`ThreadPoolExecutor`) Workaround:**
+Pass parent context IDs explicitly when submitting tasks to thread pools.
+
+```python
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from langfuse.decorators import langfuse_context, observe
+
+@observe()
+def execute_task(*args, **kwargs): # kwargs catches the Langfuse IDs
+    print(f"Executing task with args: {args}")
+    return args
+
+@observe()
+def execute_groups_in_threads(task_args):
+    trace_id = langfuse_context.get_current_trace_id()
+    observation_id = langfuse_context.get_current_observation_id()
+
+    results = []
+    with ThreadPoolExecutor(3) as executor:
+        futures = [
+            executor.submit(
+                execute_task,
+                *task_arg,
+                # Pass parent context to the task function
+                langfuse_parent_trace_id=trace_id,
+                langfuse_parent_observation_id=observation_id,
+            )
+            for task_arg in task_args
+        ]
+        for future in as_completed(futures):
+            results.append(future.result())
+    return results
+
+task_args_list = [["a", "b"], ["c", "d"]]
+execute_groups_in_threads(task_args_list)
+```
+
+### 2.2. Using Low-Level SDK
+
+For fine-grained control or when decorators are not suitable.
+
+```python
+from langfuse import Langfuse
+import time
+
+langfuse = Langfuse() # Assumes env vars are set
+
+# Create a root trace
+trace = langfuse.trace(
+    name = "manual-llm-feature",
+    user_id = "user-manual",
+    metadata = {"source": "low-level-sdk"},
+    tags = ["manual"]
+)
+
+# Create a span within the trace
+span = trace.span(
+    name="manual-retrieval",
+    input={"query": "Find relevant docs"},
+    metadata={"db": "vector-db"}
+)
+time.sleep(0.05) # Simulate work
+retrieved_docs = "[doc1, doc2]"
+span.end(output={"docs": retrieved_docs}) # End the span, sets duration
+
+# Create a generation within the trace
+generation = trace.generation(
+    name="manual-summary",
+    model="gpt-4o-mini",
+    input=[{"role": "user", "content": "Summarize: " + retrieved_docs}],
+    model_parameters={"temperature": 0.5}
+)
+time.sleep(0.1) # Simulate LLM call
+summary = "Docs summarized."
+generation.end(
+    output=summary,
+    usage_details={"input": 10, "output": 5, "unit": "TOKENS"} # Or OpenAI format
+)
+
+# Create an event within the span
+event = span.event(
+    name="db-lookup-success",
+    metadata={"docs_count": 2}
+)
+
+# Create nested spans/generations
+outer_span = trace.span(name="outer-processing")
+inner_span = outer_span.span(name="inner-processing") # Implicitly uses outer_span as parent
+inner_span.end()
+outer_span.end()
+
+# Alternative: Create via client and IDs
+span_alt = langfuse.span(trace_id=trace.id, name="alt-span")
+gen_alt = langfuse.generation(trace_id=trace.id, parent_observation_id=span_alt.id, name="alt-gen")
+gen_alt.end()
+span_alt.end()
+
+# Ensure data is sent!
+langfuse.flush()
+
+print(f"Manual Trace URL: {trace.get_trace_url()}")
+```
+
+### 2.3. Flushing Data
+
+Crucial for short-lived scripts, serverless functions, or before application exit to ensure buffered data is sent.
+
+```python
+from langfuse import Langfuse
+from langfuse.decorators import langfuse_context, observe
+
+langfuse = Langfuse()
+
+@observe()
+def short_lived_task():
+    print("Doing quick work...")
+    trace = langfuse.trace(name="short-trace")
+    trace.span(name="short-span").end()
+    print("Task done.")
+
+short_lived_task()
+
+# Flush using context (if using decorators)
+langfuse_context.flush()
+
+# Flush using client instance (if using low-level SDK or need explicit control)
+langfuse.flush()
+
+# For long-running apps (like web servers), flushing might only be needed on graceful shutdown
+# e.g., FastAPI lifespan event, atexit handler
+```
+
+## 3. Framework Integrations
+
+Langfuse integrates with popular Python LLM frameworks.
+
+### 3.1. OpenAI Integration
+
+Use the Langfuse wrapper for automatic tracing of OpenAI calls.
+
+**Good: Use Langfuse Wrapper**
+```python
+# Correct import for automatic tracing
+from langfuse.openai import openai
+# from langfuse.openai import OpenAI, AsyncOpenAI, AzureOpenAI, AsyncAzureOpenAI # For specific classes
+
+client = openai.OpenAI() # Can also be AsyncOpenAI, AzureOpenAI etc.
+
+# This call WILL be traced automatically
+completion = client.chat.completions.create(
+  model="gpt-4o",
+  messages=[{"role": "user", "content": "Hello from Langfuse wrapper!"}],
+  # Add Langfuse attributes directly
+  name="my-openai-completion",
+  user_id="user-openai-wrap",
+  session_id="session-wrap-1",
+  tags=["openai-sdk", "wrapper"],
+  metadata={"integration": "langfuse.openai"}
+)
+print(completion.choices[0].message.content)
+
+# Flush needed in short scripts
+openai.flush_langfuse()
+```
+
+**Bad: Standard Import (No Auto-Tracing)**
+```python
+# Incorrect import if Langfuse tracing is desired
+import openai
+
+client = openai.OpenAI()
+
+# This call WILL NOT be traced by Langfuse automatically
+completion = client.chat.completions.create(
+  model="gpt-4o",
+  messages=[{"role": "user", "content": "Hello from standard wrapper!"}]
+)
+print(completion.choices[0].message.content)
+```
+
+**Streaming & Usage:**
+Enable `include_usage` for token counts in streams.
+
+```python
+from langfuse.openai import openai
+
+client = openai.OpenAI()
+
+stream = client.chat.completions.create(
+  model="gpt-4o",
+  messages=[{"role": "user", "content": "Stream hello"}],
+  stream=True,
+  stream_options={"include_usage": True} # Get usage data in the last chunk
+)
+
+result = ""
+for chunk in stream:
+  # Check if chunk choices are not empty (usage chunk has empty choices)
+  if chunk.choices:
+    result += chunk.choices[0].delta.content or ""
+print(f"Streamed result: {result}")
+
+openai.flush_langfuse()
+```
+
+### 3.2. Langchain Integration
+
+Use the `CallbackHandler` for Langchain tracing.
+
+**Basic Handler Usage:**
+Initialize the handler and pass it to the `config` dict.
+
+```python
+from langfuse.callback import CallbackHandler
+from langchain_openai import ChatOpenAI
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import HumanMessage
+
+# Initialize handler (reads keys from env vars by default)
+langfuse_handler = CallbackHandler(
+    # Optional: Set user/session ID for all traces using this handler
+    # user_id="user-langchain",
+    # session_id="session-langchain-1"
+)
+# Optional: Check connection
+# langfuse_handler.auth_check()
+
+# Example Langchain setup
+llm = ChatOpenAI(model="gpt-4o-mini")
+prompt = ChatPromptTemplate.from_template("Tell me a joke about {topic}")
+chain = prompt | llm
+
+# Pass handler in config
+response = chain.invoke({"topic": "callbacks"}, config={"callbacks": [langfuse_handler]})
+print(response.content)
+
+# Pass handler dynamically via metadata for user/session IDs
+response_dyn = chain.invoke(
+    {"topic": "metadata"},
+    config={
+        "callbacks": [langfuse_handler],
+        "run_name": "Joke Chain Dyn ID", # Sets trace name
+        "tags": ["langchain", "dynamic"],
+        "metadata": {
+            "langfuse_user_id": "user-dynamic",
+            "langfuse_session_id": "session-dynamic-1"
+        }
+    }
+)
+print(response_dyn.content)
+
+
+# Flush needed in short scripts
+langfuse_handler.flush()
+```
+
+**Using Decorators with Langchain:**
+Get the handler from the decorator context.
+
+```python
+from langfuse.decorators import langfuse_context, observe
+# ... (import Langchain components as above)
+
+@observe()
+def run_langchain_in_decorator(topic: str):
+    # Get handler scoped to this trace/span
+    handler = langfuse_context.get_current_langchain_handler()
+
+    # Can also update trace context here
+    langfuse_context.update_current_trace(name=f"Langchain Decorator {topic}")
+
+    # Pass handler to invoke
+    chain.invoke({"topic": topic}, config={"callbacks": [handler]})
+
+run_langchain_in_decorator("decorators")
+
+# Flush context if decorator is top-level and script ends
+langfuse_context.flush()
+```
+
+### 3.3. LlamaIndex Integration
+
+Use `LlamaIndexCallbackHandler` or the `LlamaIndexInstrumentor`.
+
+**Callback Handler (Manual Setup):**
+Set the handler in LlamaIndex `Settings`.
+
+```python
+from llama_index.core import Settings, Document, VectorStoreIndex
+from llama_index.core.callbacks import CallbackManager
+from langfuse.llama_index import LlamaIndexCallbackHandler
+
+# Assumes OPENAI_API_KEY is set for LlamaIndex defaults
+# os.environ["OPENAI_API_KEY"] = "sk-..."
+
+# Initialize Langfuse handler
+langfuse_callback_handler = LlamaIndexCallbackHandler()
+
+# Set it globally for LlamaIndex
+Settings.callback_manager = CallbackManager([langfuse_callback_handler])
+
+# Example LlamaIndex usage - these operations will be traced
+doc1 = Document(text="Langfuse helps observe LLMs.")
+doc2 = Document(text="LlamaIndex builds RAG apps.")
+index = VectorStoreIndex.from_documents([doc1, doc2])
+query_engine = index.as_query_engine()
+response = query_engine.query("What is Langfuse?")
+print(response)
+
+# Flush needed in short scripts
+langfuse_callback_handler.flush()
+```
+
+**Instrumentor (Automatic):**
+Simpler setup for tracing all LlamaIndex operations.
+
+```python
+from langfuse.llama_index import LlamaIndexInstrumentor
+from llama_index.core import Document, VectorStoreIndex
+
+# Assumes Langfuse env vars are set
+instrumentor = LlamaIndexInstrumentor()
+instrumentor.start() # Start auto-instrumentation
+
+# Example LlamaIndex usage - will be traced
+doc1 = Document(text="Langfuse helps observe LLMs.")
+index = VectorStoreIndex.from_documents([doc1])
+response = index.as_query_engine().query("Describe Langfuse")
+print(response)
+
+# Trace specific block with context manager and add score
+with instrumentor.observe(user_id='user-instr', session_id='session-instr') as trace:
+    response2 = index.as_query_engine().query("What does LlamaIndex do?")
+    print(response2)
+    trace.score(name="relevance", value=1.0)
+
+# Flush needed in short scripts
+instrumentor.flush()
+```
+
+### 3.4. Other Integrations (Examples)
+
+Langfuse often uses wrappers or decorators.
+
+**Mistral SDK (via Decorator):** Wrap the client call.
+```python
+# Assume mistral_client initialized
+# Use @observe(as_type="generation") and langfuse_context as shown in Section 2.1
+```
+
+**Groq (via OpenAI SDK Wrapper):** Use the Langfuse OpenAI wrapper with Groq endpoint.
+```python
+from langfuse.openai import OpenAI # Use Langfuse wrapper
+import os
+
+client = OpenAI(
+    base_url="https://api.groq.com/openai/v1",
+    api_key=os.environ.get("GROQ_API_KEY")
+)
+# Now use 'client.chat.completions.create' as in OpenAI examples
+```
+
+### 3.5. Google Agent Development Kit (ADK) Integration
+
+Integrate Langfuse with Google's Agent Development Kit (ADK) using the OpenTelemetry (OTel) protocol to capture detailed traces.
+
+**1. Install Dependencies:**
+First, install the necessary Python packages:
+
+```bash
+pip install google-adk opentelemetry-sdk opentelemetry-exporter-otlp
+```
+
+**2. Set Up Environment Variables:**
+Configure your environment with Langfuse credentials, OTel endpoint, and your Gemini API key.
+
+```python
+import os
+import base64
+
+# Langfuse Credentials
+LANGFUSE_PUBLIC_KEY = "pk-lf-..." # Replace with your Langfuse public key
+LANGFUSE_SECRET_KEY = "sk-lf-..." # Replace with your Langfuse secret key
+LANGFUSE_AUTH = base64.b64encode(f"{LANGFUSE_PUBLIC_KEY}:{LANGFUSE_SECRET_KEY}".encode()).decode()
+
+# OpenTelemetry Endpoint (EU or US)
+# For EU:
+os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "https://cloud.langfuse.com/api/public/otel"
+# For US:
+# os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "https://us.cloud.langfuse.com/api/public/otel"
+
+os.environ["OTEL_EXPORTER_OTLP_HEADERS"] = f"Authorization=Basic {LANGFUSE_AUTH}"
+
+# Google Gemini API Key
+os.environ["GOOGLE_API_KEY"] = "..." # Replace with your Gemini API key
+```
+
+**3. Initialize OpenTelemetry:**
+Set up the OTel tracer provider and exporter to send spans to Langfuse.
+
+```python
+from opentelemetry import trace
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+
+# Configure the TracerProvider
+provider = TracerProvider(resource=Resource.create({"service.name": "your-adk-agent-name"}))
+
+# Configure the OTLPSpanExporter
+exporter = OTLPSpanExporter() # Endpoint and headers are read from env vars
+
+# Add the BatchSpanProcessor to the provider
+provider.add_span_processor(BatchSpanProcessor(exporter))
+
+# Set the global TracerProvider
+trace.set_tracer_provider(provider)
+
+# Get a tracer for your application
+tracer = trace.get_tracer("your_app_tracer_name")
+```
+
+**4. Example ADK Agent:**
+Tool calls and model completions within your ADK agent will be captured as OTel spans and sent to Langfuse.
+
+```python
+from google.adk import Agent, Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types # For google.generativeai.types
+
+# Define a sample tool
+def say_hello():
+    """A simple tool that returns a greeting."""
+    return {"greeting": "Hello from ADK to Langfuse! 👋"}
+
+# Create an agent instance
+agent = Agent(
+    name="hello_adk_agent",
+    model="gemini-1.5-flash", # Or your preferred Gemini model
+    instruction="Always greet using the say_hello tool.",
+    tools=[say_hello],
+)
+
+# Initialize session service and runner
+session_service = InMemorySessionService()
+APP_NAME = "my_adk_application"
+USER_ID = "adk-user-001"
+SESSION_ID = "adk-session-xyz" # Can be a UUID or any string
+
+# Create the session (typically done once per session)
+session_service.create_session(
+    app_name=APP_NAME, user_id=USER_ID, session_id=SESSION_ID
+)
+
+runner = Runner(agent=agent, app_name=APP_NAME, session_service=session_service)
+
+# Run the agent
+user_message = types.Content(role="user", parts=[types.Part(text="Hi there!")])
+
+for event in runner.run(user_id=USER_ID, session_id=SESSION_ID, new_message=user_message):
+    if event.is_final_response():
+        print(f"Agent Response: {event.content.parts[0].text}")
+
+# Note: In a long-running application, OTel would batch and send traces periodically.
+# For short scripts or testing, you might need to ensure spans are flushed.
+# However, ADK's integration with OTel should handle this.
+# If using the OTel SDK directly for other parts, ensure to call `tracer_provider.shutdown()` on application exit.
+```
+
+**5. View Traces in Langfuse:**
+After running your ADK application, navigate to your Langfuse project dashboard. You will find detailed traces of your agent's execution, including tool calls and model interactions, under the "Traces" section.
+
+*Reference: [Langfuse Docs - Google ADK Integration](mdc:https:/langfuse.com/docs/integrations/google-adk)*
+
+## 4. Scoring Traces and Observations
+
+Record evaluations or feedback using scores.
+
+```python
+from langfuse import Langfuse
+from langfuse.decorators import langfuse_context, observe
+import uuid
+
+langfuse_client = Langfuse() # For scoring outside context
+
+@observe()
+def function_to_evaluate(input_val):
+    # ... some processing ...
+    result = f"Processed {input_val}"
+    # Score the current observation (this span)
+    langfuse_context.score_current_observation(name="processing-quality", value=0.9)
+    # Score the root trace
+    langfuse_context.score_current_trace(name="overall-quality", value=0.95, comment="Looks good internally")
+    return result, langfuse_context.get_current_trace_id()
+
+output, trace_id = function_to_evaluate("data")
+
+# Score the trace from outside using its ID
+langfuse_client.score(
+    trace_id=trace_id,
+    name="user-feedback",
+    value=1.0, # 1 for positive, 0 for negative, or numeric scale
+    comment="User liked the result",
+    # data_type="NUMERIC" / "BOOLEAN" / "CATEGORICAL" - Often inferred
+)
+
+# Score a specific observation (if you have its ID)
+# span_id = ... # Get span ID from context or trace object
+# langfuse_client.score(trace_id=trace_id, observation_id=span_id, name="span-score", value=0.8)
+
+# Flush if script ends here
+langfuse_client.flush()
+langfuse_context.flush() # If decorators used at top level
+```
+
+## 5. Prompt Management
+
+Use Langfuse to manage, version, and track prompt usage.
+
+```python
+from langfuse import Langfuse
+from langfuse.openai import openai # Use wrapped client for linking
+from langchain_core.prompts import ChatPromptTemplate # For Langchain example
+from langchain_openai import ChatOpenAI # For Langchain example
+
+langfuse = Langfuse()
+
+# Create/Update a prompt (Upserts based on name)
+langfuse.create_prompt(
+    name="greeting-generator",
+    prompt="Generate a friendly greeting for {{user_name}} who works in {{department}}.",
+    labels=["production"], # Mark as active production version
+    config={"model": "gpt-4o-mini", "temperature": 0.7}
+)
+
+# Fetch the 'production' version
+prompt_obj = langfuse.get_prompt("greeting-generator")
+# Fetch a specific version or label
+# prompt_v1 = langfuse.get_prompt("greeting-generator", version=1)
+# prompt_staging = langfuse.get_prompt("greeting-generator", label="staging")
+
+# Compile the prompt
+compiled_text = prompt_obj.compile(user_name="Alice", department="AI")
+print(f"Compiled Prompt: {compiled_text}")
+
+# Use with Langfuse OpenAI wrapper (linking)
+completion = openai.chat.completions.create(
+  model=prompt_obj.config.get("model", "gpt-4o-mini"), # Use model from config
+  messages=[{"role": "user", "content": compiled_text}],
+  temperature=prompt_obj.config.get("temperature", 0.7), # Use temp from config
+  langfuse_prompt=prompt_obj # *** Crucial for linking ***
+)
+print(f"OpenAI Response: {completion.choices[0].message.content}")
+
+# Use with Langchain (linking)
+langchain_template = ChatPromptTemplate.from_template(
+    prompt_obj.get_langchain_prompt(), # Converts {{var}} to {var}
+    metadata={"langfuse_prompt": prompt_obj} # *** Crucial for linking ***
+)
+lc_model = ChatOpenAI(model=prompt_obj.config.get("model", "gpt-4o-mini"), temperature=prompt_obj.config.get("temperature", 0.7))
+lc_chain = langchain_template | lc_model
+# Assume langfuse_handler is initialized
+# lc_response = lc_chain.invoke({"user_name": "Bob", "department": "Eng"}, config={"callbacks": [langfuse_handler]})
+# print(f"Langchain Response: {lc_response.content}")
+
+# Flush needed in short scripts
+openai.flush_langfuse()
+# langfuse_handler.flush()
+```
+
+## 6. Advanced Features
+
+### 6.1. Masking Sensitive Data
+
+Define a function to redact data before it's sent to Langfuse.
+
+```python
+import re
+from langfuse import Langfuse
+from langfuse.decorators import langfuse_context, observe
+from langfuse.openai import openai # Use wrapped client
+
+def simple_masking_function(data):
+  if isinstance(data, str):
+    # Example: Mask email addresses
+    data = re.sub(r'\b[\w.-]+?@\w+?\.\w+?\b', '[REDACTED EMAIL]', data)
+    # Example: Mask things starting with SECRET_
+    if data.startswith("SECRET_"):
+        return "[REDACTED]"
+  return data
+
+# --- Option 1: Configure globally for decorators ---
+# langfuse_context.configure(mask=simple_masking_function)
+# @observe()
+# def process_data_with_decorator_mask(email: str):
+#     print(f"Processing: {email}") # Original data used here
+#     return {"result": "processed", "original": email} # Output will be masked by Langfuse
+
+# process_data_with_decorator_mask("test@example.com")
+# langfuse_context.flush()
+
+# --- Option 2: Configure for low-level client ---
+# langfuse_masked_client = Langfuse(mask=simple_masking_function)
+# trace = langfuse_masked_client.trace(name="masked-trace", input={"email": "test2@example.com"}, output="SECRET_DATA")
+# print(f"Masked Trace URL: {trace.get_trace_url()}")
+# langfuse_masked_client.flush()
+
+# --- Option 3: Configure for OpenAI integration ---
+# openai.langfuse_mask = simple_masking_function
+# completion = openai.chat.completions.create(
+#     model="gpt-4o-mini",
+#     messages=[{"role": "user", "content": "My email is test3@example.com"}],
+#     metadata={"secret": "SECRET_VALUE"} # Metadata will also be masked
+# )
+# openai.flush_langfuse()
+
+# --- Option 4: Configure for Langchain handler ---
+# from langfuse.callback import CallbackHandler
+# masked_handler = CallbackHandler(mask=simple_masking_function)
+# # Use masked_handler in chain.invoke config
+```
+
+### 6.2. User and Session Tracking
+
+Associate traces with users and sessions for better analytics.
+
+*   **OpenAI Integration:** Pass `user_id="...", session_id="..."` to `create()`.
+*   **Langchain Integration:** Pass `user_id`, `session_id` to `CallbackHandler` constructor OR dynamically via `metadata={"langfuse_user_id": "...", "langfuse_session_id": "..."}` in `invoke` config.
+*   **Decorators:** Use `langfuse_context.update_current_trace(user_id="...", session_id="...")`.
+*   **Low-level SDK:** Pass `user_id`, `session_id` to `langfuse.trace()`.
+
+### 6.3. Versioning and Releases
+
+Track application or component versions.
+
+*   **Environment Variable:** Set `LANGFUSE_RELEASE="your_release_tag"`. SDKs pick this up automatically.
+*   **Client Initialization:** Pass `release="...", version="..."` to `Langfuse()` or `CallbackHandler()`.
+*   **Trace/Observation Creation:** Pass `release="...", version="..."` to `langfuse.trace()`, `trace.span()`, etc.
+*   **Decorators:** Use `langfuse_context.update_current_trace(release="...")` or `langfuse_context.update_current_observation(version="...")`.
+
+### 6.4. Multi-modal Data (Images/Audio/Files)
+
+Use `LangfuseMedia` to wrap binary data for ingestion. **Note:** Does not work directly in decorated function I/O, use `update_current_trace/observation`.
+
+```python
+from langfuse.media import LangfuseMedia
+from langfuse.decorators import langfuse_context, observe
+import base64
+
+# Example with base64 image data
+image_b64 = "/9j/4AAQSk..." # Your base64 encoded image string
+image_bytes = base64.b64decode(image_b64)
+
+media_obj = LangfuseMedia(content_bytes=image_bytes, content_type="image/jpeg")
+
+@observe()
+def process_image_trace():
+    # Log media in metadata or input/output via context update
+    langfuse_context.update_current_trace(
+        input={"prompt": "Describe image", "image_input": media_obj},
+        metadata={"original_file": media_obj}
+    )
+    # ... process image ...
+    langfuse_context.update_current_observation(
+        output={"description": "...", "processed_image": media_obj} # Example output
+    )
+
+process_image_trace()
+langfuse_context.flush()
+```

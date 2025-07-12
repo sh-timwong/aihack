@@ -1,0 +1,264 @@
+---
+description: Guides AI on fetching Jira issues using MCP tools and standardizing Jira task list documentation (e.g., 0-JiraTaskList.md). Enforces format and outlines JQL usage for personal and project-wide views based on available MCP tools.
+globs: 
+alwaysApply: false
+---
+# Guide: Jira Task Management & Documentation (MCP Tool Focused)
+
+This rule defines the standard procedures for fetching Jira issue data using the available MCP Atlassian Jira tools and documenting task lists within Markdown files using a **two-tier structure**:
+1.  A master list of Epics (`docs/0-JiraEpicList.md`).
+2.  Individual files for each Epic's detailed tasks (`docs/epics/EPIC-KEY/EPIC-KEY-Tasks.md`).
+
+Adherence ensures consistency, leverages available tooling effectively, and avoids loading excessively large task files into context.
+
+## I. Fetching Jira Data with MCP Tools
+
+When asked to retrieve, summarize, or update Jira information for documentation, primarily use the `mcp_mcp-atlassian_jira_search` and `mcp_mcp-atlassian_jira_get_issue` tools, tailored for the new file structure.
+
+**Core Tools & Usage:**
+
+1.  **`mcp_mcp-atlassian_jira_search`:**
+    *   **Purpose:** Use this tool to find *multiple* issues based on specific criteria using Jira Query Language (JQL).
+        *   For `docs/0-JiraEpicList.md`: Fetch only Epics.
+        *   For `docs/epics/EPIC-KEY/EPIC-KEY-Tasks.md`: Fetch children (Stories, Tasks, Bugs) of a specific Epic.
+    *   **Key Parameters:**
+        *   `jql`: The JQL query string to filter issues. See Section II for examples specific to the file structure.
+        *   `fields`: A comma-separated list of fields to return.
+            *   **For `0-JiraEpicList.md`:** Use minimal fields (e.g., `summary, status, assignee, issuetype`). Links are generated manually/template.
+            *   **For `EPIC-KEY-Tasks.md`:** Include detailed fields like `summary, description, status, assignee, issuetype, priority, created, updated, labels, parent`.
+        *   `limit`: Maximum number of issues to return. Set explicitly (e.g., `limit=50`) to manage response size, especially for detailed task files.
+        *   `startAt`: Starting index for pagination (0-based).
+        *   `projects_filter`: Optionally filter by specific project keys (e.g., `projects_filter='PROJ,ANOTHERPROJ'`).
+
+2.  **`mcp_mcp-atlassian_jira_get_issue`:**
+    *   **Purpose:** Use this tool to get *detailed* information about a *single*, specific issue identified by its key (e.g., `PROJ-123`). Use this if you need information *not* typically included in list views (comments, attachments, worklogs, etc.) **after** the main table has been generated.
+    *   **Key Parameters:**
+        *   `issue_key`: The unique identifier of the issue (e.g., `PROJ-123`).
+        *   `fields`: Specify fields needed. Use `*all` for all available fields if necessary, but be mindful of response size.
+        *   `expand`: Use to get related data like `changelog`, `renderedFields`, or `transitions`.
+        *   `comment_limit`: Control the number of comments returned.
+
+**Recommended Fields for `jira_search`:**
+
+*   **For `docs/0-JiraEpicList.md`:**
+    `summary, status, assignee, issuetype`
+    (Link column is added manually in the Markdown template).
+*   **For `docs/epics/EPIC-KEY/EPIC-KEY-Tasks.md`:**
+    `summary, description, status, assignee, issuetype, priority, created, updated, labels, parent`
+    (The `Prompt Hint` column is added manually or with AI assistance after fetching).
+
+**Handling Detailed Information:**
+
+*   First, populate the relevant table (`0-JiraEpicList.md` or `EPIC-KEY-Tasks.md`) using `mcp_mcp-atlassian_jira_search`.
+*   If full comments, attachments, or detailed history are needed for a *specific* issue within a detailed task file, use `mcp_mcp-atlassian_jira_get_issue` *separately* for that `issue_key` and add the information below the table or in a dedicated section within that file.
+
+## II. JQL Examples for `mcp_mcp-atlassian_jira_search` (New Structure)
+
+Adapt the `project` key (e.g., `PROJ`) as needed.
+
+*   **For `docs/0-JiraEpicList.md` (Fetching Epics):**
+    ```jql
+    project = PROJ AND issuetype = Epic ORDER BY key ASC
+    ```
+*   **For `docs/epics/EPIC-KEY/EPIC-KEY-Tasks.md` (Fetching Children of a Specific Epic `PROJ-XYZ`):**
+    ```jql
+    project = PROJ AND parent = PROJ-XYZ ORDER BY issuetype DESC, status ASC, priority DESC, key ASC
+    ```
+    *(Note: Confirm the field used for Epic linking - usually `parent` for newer Jira Cloud instances. If `parent = EPIC-KEY` fails, ask the user for their specific JQL or custom field name.)*
+
+*   **Other Common Queries (Adapt as Needed):**
+    *   Issues Assigned to Me in Epic `PROJ-XYZ`:
+        ```jql
+        project = PROJ AND parent = PROJ-XYZ AND assignee = currentUser() ORDER BY status ASC, priority DESC
+        ```
+    *   Open Bugs in Epic `PROJ-XYZ`:
+        ```jql
+        project = PROJ AND parent = PROJ-XYZ AND issuetype = Bug AND statusCategory != Done ORDER BY priority DESC
+        ```
+
+**Usage Notes:**
+
+*   Always verify the correct `project_key` and Epic link field (`parent` or custom).
+*   Use the `limit` parameter in `jira_search` to manage results.
+*   Combine clauses with `AND`/`OR`.
+
+## III. Standardized Task List Formats
+
+### A. Master Epic List (`docs/0-JiraEpicList.md`)
+
+**Structure:**
+
+1.  **Main Heading:** `# [Project Name] Epics`
+2.  **Introduction:** Brief description and link to the main project documentation.
+3.  **Epic Table:** Markdown table linking to detailed task files.
+
+**Table Columns:**
+
+| Key     | Summary           | Link                             | Status   | Assignee   |
+| :--- | :---- | :---- | :---- | :--- |
+| PROJ-X | Epic Summary...   | [PROJ-X Tasks](mdc:docs/epics/PROJ-X/PROJ-X-Tasks.md) | Open     | user@domain |
+| PROJ-Y | Another Epic... | [PROJ-Y Tasks](mdc:docs/epics/PROJ-Y/PROJ-Y-Tasks.md) | In Progress | other@domain |
+
+**Data Mapping (from `mcp_mcp-atlassian_jira_search` response `issues[].fields`):**
+
+*   **Key:** Jira issue key (`key`).
+*   **Summary:** Epic summary (`summary`).
+*   **Link:** **Manually constructed Markdown link** pointing to the corresponding `docs/epics/EPIC-KEY/EPIC-KEY-Tasks.md` file (e.g., `[PROJ-X Tasks](mdc:docs/epics/PROJ-X/PROJ-X-Tasks.md)`).
+*   **Status:** Current status (`status.name`).
+*   **Assignee:** Assigned user (`assignee.displayName` or `assignee.emailAddress`). Use 'Unassigned' if null.
+
+### B. Detailed Epic Task Files (`docs/epics/EPIC-KEY/EPIC-KEY-Tasks.md`)
+
+**Structure:**
+
+1.  **Main Heading:** `# Epic [EPIC-KEY]: [Epic Summary]`
+2.  **Link Back:** Relative link back to the master list (`[0-JiraEpicList.md](mdc:../../0-JiraEpicList.md)`).
+3.  **Note:** Include the standard note about Jira data updates.
+4.  **Detailed Task List:** A section for each task, using an H2 heading for the task key (`## PROJ-XX`) followed by a bulleted list for its fields.
+
+**Example Task Format:**
+
+```markdown
+## PROJ-XX
+- **Key**: PROJ-XX
+- **Type**: Task
+- **Summary**: Brief Summary of the Task
+- **Parent**: PROJ-X
+- **Description**: 
+
+    Full issue description goes here.
+    It can span multiple lines easily.
+
+    **Acceptance Criteria:**
+    - First acceptance criterion
+    - Second acceptance criterion
+    - Third acceptance criterion
+
+- **Status**: In Progress
+- **Assignee**: user@domain
+- **Priority**: High
+- **Labels**: backend, needs-review
+- **Story Points**: 3
+- **Linked Work Items**: Blocks: PROJ-YY, Related to: PROJ-ZZ
+- **Est. Week**: Week 1
+- **Prompt Hint**: Implement task API endpoint
+```
+
+**Key Formatting Rules:**
+1. Description and Acceptance Criteria must be indented with 4 spaces
+2. There must be a blank line between Description and its content
+3. There must be a blank line between Description content and Acceptance Criteria
+4. Acceptance Criteria must be formatted as a bullet list
+5. All metadata fields must follow the exact order shown in the example
+6. All fields must be in bold using double asterisks
+7. All field values must be on the same line as the field name, separated by a colon and space
+
+**Data Mapping (from `mcp_mcp-atlassian_jira_search` response `issues[].fields` to Bulleted List):**
+
+Each task retrieved will be represented by a block starting with its Jira `key` as an H2 heading (`##`). The fields below are bullet points (`- **Field Name**: Value`):
+
+*   **Key:** Jira issue key (`key`). Added explicitly as the first bullet item for clarity.
+*   **Type:** Issue type (`issuetype.name`).
+*   **Summary:** Issue summary (`summary`).
+*   **Parent:** Parent issue key (`parent.key`). **Just the key**, e.g., `PROJ-X`. May require fetching the `parent` field. If no parent, omit or use `None`.
+*   **Description:** Issue description (`description`). Rendered Markdown/plain text. Multi-line is handled naturally.
+*   **Status:** Current status (`status.name`).
+*   **Assignee:** Assigned user (`assignee.displayName` or `assignee.emailAddress`). 'Unassigned' if null.
+*   **Priority:** Issue priority (`priority.name`). 'None' if null.
+*   **Labels:** Relevant labels (`labels` array), comma-separated. 'None' if empty.
+*   **Linked Work Items:** Requires parsing `issuelinks`. **Format each linked issue as `[Link Type]: KEY`**. (e.g., `Blocks: PROJ-YY`). List multiple links separated by commas or newlines within the bullet point value. May require fetching the `issuelinks` field. 'None' if empty.
+*   **Est. Week:** **Manually added.** This field is *not* directly available from standard Jira fields. It must be added based on project planning.
+*   **Prompt Hint:** **Manually added or AI-assisted.** Concise phrase (verb + subject) suggesting a documentation action related to this task (e.g., "Generate API docs for X", "Update implementation plan for Y", "Create backend structure diagram for Z").
+
+*(Note: Fetching `parent` and `issuelinks` might require adding them to the `fields` parameter in `jira_search`.)*
+
+## IV. Generating/Updating Task Lists
+
+When asked to create or update task list documents:
+
+1.  **Identify Target File:** Determine if the request relates to the master Epic list (`docs/0-JiraEpicList.md`) or a specific Epic's task file (`docs/epics/EPIC-KEY/EPIC-KEY-Tasks.md`).
+2.  **Formulate JQL:** Create the appropriate JQL query (see Section II).
+    *   For master list: Fetch `issuetype = Epic`.
+    *   For epic file: Fetch `parent = EPIC-KEY`.
+3.  **Fetch Data:** Call `mcp_mcp-atlassian_jira_search` with the JQL and the corresponding recommended `fields` for the target file type. Use `limit` appropriately.
+4.  **Format Output:** Structure the results into the correct format:
+    *   For master list (`docs/0-JiraEpicList.md`): Generate the **Markdown table** as described in Section III.A. Use relative paths for the `Link` column (e.g., `[EPIC-KEY Tasks](mdc:epics/EPIC-KEY/EPIC-KEY-Tasks.md)`).
+    *   For epic file (`docs/epics/EPIC-KEY/EPIC-KEY-Tasks.md`): Generate the **H2 Heading + Bulleted List** format as described in Section III.B. Format `Parent` and `Linked Work Items` as plain keys.
+5.  **Add Further Details (If Needed):** For detailed task files (H2 + Bulleted List format), if comments/attachments etc. are needed for specific issues, use `mcp_mcp-atlassian_jira_get_issue` separately and add info *within* the relevant task's bullet list or in a separate section below it.
+
+## V. Batch Updating Issues (Minimizing Tool Calls)
+
+While there is no dedicated *batch update* tool (`mcp_mcp-atlassian_jira_batch_update_issues` does not exist), you can minimize tool calls when needing to update multiple issues by following this strategy:
+
+1.  **Identify Issues:** Determine the set of issues (`issue_key` list) that require updates.
+2.  **Gather Current State (if needed):** If updates depend on the current state (e.g., appending to description, checking current status), use **one** `mcp_mcp-atlassian_jira_search` call with the relevant JQL (`key in (KEY-1, KEY-2, ...)` or other filters) and request the necessary `fields` (e.g., `summary, description, status, parent, issuelinks`).
+3.  **Prepare Updates:** Based on the request and fetched data, construct the necessary payloads for each individual update:
+    *   **Summary, Description, Parent, Labels, Custom Fields:** Prepare the `fields` JSON object for `mcp_mcp-atlassian_jira_update_issue`. The `parent` field is typically updated here (e.g., `{"parent": {"key": "NEW-PARENT-KEY"}}`).
+    *   **Status:** Identify the required `transition_id`. If necessary, call `mcp_mcp-atlassian_jira_get_transitions` for *one* representative issue (if the workflow is identical) or individually if workflows differ. Prepare the arguments for `mcp_mcp-atlassian_jira_transition_issue`.
+    *   **Linked Work Items:** Identify the `inward_issue_key`, `outward_issue_key`, and `link_type`. Prepare arguments for `mcp_mcp-atlassian_jira_create_issue_link`.
+4.  **Execute Sequential Updates:** Call the appropriate single-issue update tool sequentially for each issue:
+    *   Call `mcp_mcp-atlassian_jira_update_issue` for each issue needing field updates.
+    *   Call `mcp_mcp-atlassian_jira_transition_issue` for each issue needing a status change.
+    *   Call `mcp_mcp-atlassian_jira_create_issue_link` for each link to be created.
+
+**Example Workflow (Update summary and status for 3 issues):**
+
+1.  **Identify:** Need to update `PROJ-1`, `PROJ-2`, `PROJ-3`. All need summary updates and transition to 'Done'.
+2.  **Gather:** (Optional, if needed for context) `mcp_mcp-atlassian_jira_search(jql='key in (PROJ-1, PROJ-2, PROJ-3)', fields='summary,status')`
+3.  **Prepare:**
+    *   Determine the 'Done' `transition_id` (e.g., '31') potentially using `mcp_mcp-atlassian_jira_get_transitions(issue_key='PROJ-1')`.
+    *   Prepare update payloads:
+        *   `PROJ-1`: `fields='{"summary": "New Summary 1"}'`, `transition_id='31'`
+        *   `PROJ-2`: `fields='{"summary": "New Summary 2"}'`, `transition_id='31'`
+        *   `PROJ-3`: `fields='{"summary": "New Summary 3"}'`, `transition_id='31'`
+4.  **Execute:**
+    *   `mcp_mcp-atlassian_jira_update_issue(issue_key='PROJ-1', fields='{"summary": "New Summary 1"}')`
+    *   `mcp_mcp-atlassian_jira_transition_issue(issue_key='PROJ-1', transition_id='31')`
+    *   `mcp_mcp-atlassian_jira_update_issue(issue_key='PROJ-2', fields='{"summary": "New Summary 2"}')`
+    *   `mcp_mcp-atlassian_jira_transition_issue(issue_key='PROJ-2', transition_id='31')`
+    *   `mcp_mcp-atlassian_jira_update_issue(issue_key='PROJ-3', fields='{"summary": "New Summary 3"}')`
+    *   `mcp_mcp-atlassian_jira_transition_issue(issue_key='PROJ-3', transition_id='31')`
+
+This approach minimizes upfront data fetching calls, even though the update actions remain sequential due to tool limitations.
+
+## VI. Task Division Best Practices for AI/LLM Research
+
+When managing AI/LLM research projects, especially those aiming for lean execution and rapid iteration, breaking down tasks effectively is crucial. Jira issues should reflect this iterative and experimental nature.
+
+**Key Principles:**
+
+1.  **Focus on Experiments & Hypotheses:**
+    *   Structure larger research goals (Epics) around core hypotheses or research questions (e.g., "Epic: Improve RAG retrieval relevance using hypothetical document embeddings").
+    *   Break these down into specific, time-boxed experiments (Tasks/Stories) designed to validate or invalidate parts of the hypothesis (e.g., "Task: Implement and evaluate Faiss index for HyDE", "Task: Compare HyDE vs. standard embedding on dataset X").
+2.  **Small, Actionable Tasks:**
+    *   Create tasks that are small enough to be completed within a short timeframe (e.g., 1-3 days). This encourages frequent check-ins and allows for rapid pivoting based on results.
+    *   **AI-Friendly Tasks:** Define tasks clearly enough that an AI assistant can help with specific parts, such as:
+        *   *Code Generation:* "Implement data preprocessing function based on [spec/notebook link]."
+        *   *Analysis:* "Analyze experiment results from [results file/log] and summarize key findings."
+        *   *Documentation:* "Document the setup steps for the new evaluation pipeline."
+        *   *Research:* "Find recent papers comparing methods X and Y for task Z."
+3.  **Iterative Refinement:**
+    *   Don't aim for perfection in the first iteration. Create tasks for building a Minimum Viable Experiment (MVE) first.
+    *   Subsequent tasks can focus on refinement, scaling, addressing edge cases, or exploring alternative approaches based on initial findings.
+4.  **Clear Acceptance Criteria:**
+    *   Even for research tasks, define clear acceptance criteria. This might involve:
+        *   Specific metrics to be achieved (e.g., "Achieve > X% accuracy on validation set").
+        *   A functioning code artifact (e.g., "Working script for running the experiment").
+        *   A documented finding or analysis (e.g., "Summary report comparing model A and B").
+5.  **Document Findings in Jira/Linked Docs:**
+    *   Use Jira comments or link to dedicated documentation (e.g., Confluence, shared docs, experiment tracking platforms) to record experiment setup, results, and conclusions directly within or linked from the relevant task. This keeps context accessible.
+    *   Update the task description or add comments as findings emerge.
+6.  **Prioritize Learning:** Frame tasks around learning objectives. The goal isn't just to complete the task, but to gain insights that inform the next steps.
+
+**Example Task Breakdown (for an LLM fine-tuning epic):**
+
+*   **Epic:** Fine-tune Llama-3 for specific domain summarization.
+*   **Task 1:** Collect and preprocess initial domain dataset (Target: 100 examples). AC: Cleaned dataset file available.
+*   **Task 2:** Set up baseline fine-tuning script using Hugging Face `transformers`. AC: Script runs end-to-end on a small sample.
+*   **Task 3:** Run initial fine-tuning experiment on 100 examples. AC: Training logs and initial model checkpoint saved; ROUGE scores documented.
+*   **Task 4:** Analyze baseline results and identify failure modes. AC: Short report/comment summarizing findings.
+*   **Task 5:** Augment dataset with 500 more examples focusing on identified weaknesses. AC: Updated dataset file.
+*   **Task 6:** Re-run fine-tuning with the larger dataset. AC: Updated logs, checkpoint, and comparison metrics.
+*   **Task 7:** [Further tasks based on Task 6 results...]
+
+By following these principles, you can create a Jira structure that supports rapid, iterative AI research and development, making it easier to track progress, pivot quickly, and leverage AI assistants effectively.

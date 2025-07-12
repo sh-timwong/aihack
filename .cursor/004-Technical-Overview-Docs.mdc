@@ -1,0 +1,159 @@
+---
+description: AI Guidance: Provides guidelines for structuring and creating comprehensive technical overview documents (like READMEs or dedicated tech specs). Apply when asked to generate or update such documentation for audiences including Clients, Developers, and AI Copilots.
+globs: 
+alwaysApply: false
+---
+# Guide: Creating High-Quality Technical Overview Documentation (Project & Epic Scope)
+
+This rule provides guidelines for structuring and writing clear, comprehensive technical overview documents. These can exist at the overall project level (e.g., main project `docs/3-TechnicalOverview.md`) or be specific to a Jira Epic (e.g., `docs/epics/<EPIC_KEY>/3-TechnicalOverview.md`). A good overview helps onboard new team members, facilitates understanding for existing members, **serves as a key alignment tool for clients, developers, and AI assistants like yourself**, and acts as a reference point for the relevant scope (project or epic).
+
+Reference the project's `mdc-format.mdc` for general rules on creating `.mdc` files themselves.
+
+## I. Essential Sections
+
+A robust technical overview (whether project-wide or epic-specific) should generally include the following sections, tailored to its scope:
+
+### 1. Introduction & Purpose
+*   Briefly describe the project's purpose and goals (if project-level) or the epic's specific purpose and goals (if epic-level) from both a business and technical perspective.
+*   State what problem the system (or the epic's contribution) solves.
+*   **Clearly identify the intended audiences (e.g., Client, New Developers, Technical Leads, AI Assistant) and state the goal of aligning their understanding of the system's architecture, technology stack, and core flows *within the document's scope*.**
+*   *(Optional but Recommended for Clients):* Consider including a brief, non-technical "Executive Summary" here.
+
+### 2. Technology Stack Summary
+*   **Goal:** Provide a quick, high-level summary of the primary technologies, frameworks, languages, and major services used *relevant to the scope* (project or epic).
+*   **Content:** Use a list format.
+    *   Frontend: (e.g., React, Vue, Angular, TypeScript)
+    *   Backend: (e.g., Python/FastAPI, Node.js/Express, Java/Spring Boot)
+    *   Database: (e.g., PostgreSQL, MongoDB, Redis)
+    *   Infrastructure: (e.g., AWS, GCP, Docker, Kubernetes)
+    *   Key Libraries/Services: (e.g., Langchain, Stripe API, Twilio)
+*   **Rationale:** Offers immediate context for all audiences and helps the AI understand the core components quickly within the given scope.
+
+### 3. System Architecture (Scope-Specific)
+*   **Goal:** Provide a high-level visual understanding of the major components and their interactions *relevant to the document's scope*.
+*   **Recommendation:** Use a diagramming tool. Mermaid (`graph TD` or `graph LR`) is excellent for embedding directly in Markdown and is generally parseable by AI.
+*   **Content (Epic-Specific):** Focus on the services/modules involved in or significantly impacted by the epic. Show interactions between them and relevant external dependencies.
+*   **Content (Project-Level):** Provide a broader view of the entire system.
+*   **Example (Generic Mermaid Structure):**
+    ```mermaid
+    graph TD
+        Client([User Interface]) --> API[API Gateway]
+        API --> ServiceA[Core Service A] # Might be focus of Epic 1
+        API --> ServiceB[Core Service B] # Might be focus of Epic 2
+        ServiceA --> DB[(Database)]
+        ServiceB --> ExternalAPI[External API]
+        ServiceB --> Cache[(Cache)]
+    ```
+
+### 4. Core Workflows / Process Flows (Scope-Specific)
+*   **Goal:** Illustrate the sequence of steps for the main use cases or critical business logic *covered by the epic or project*.
+*   **Recommendation:** Use state diagrams (`stateDiagram-v2`) or sequence diagrams (`sequenceDiagram`) in Mermaid for clarity and AI parsing.
+*   **Content:** Show the progression through different states or the interaction sequence between components/actors for specific, representative tasks relevant to the scope.
+*   **Example (Generic State Diagram):**
+    ```mermaid
+    stateDiagram-v2
+        [*] --> Idle
+        Idle --> Processing: Event Received # Part of Epic X flow
+        Processing --> Waiting: External Call
+        Waiting --> Processing: Response Received
+        Processing --> Completed: Task Finished # End of Epic X flow
+        Completed --> [*]
+        Processing --> Failed: Error Occurred
+        Failed --> [*]
+    ```
+
+### 5. Technical Components Breakdown (Scope-Specific)
+*   **Goal:** Detail the key modules, services, or layers *relevant to the scope*. Connect back to the System Architecture diagram.
+*   **Recommendation:** Use text descriptions combined with class diagrams (`classDiagram`) or component diagrams if helpful.
+*   **Content:** For each major component identified in the scope's architecture diagram:
+    *   Describe its specific responsibility.
+    *   Mention key technologies/frameworks used *within this component*.
+    *   List critical sub-modules or classes/functions if necessary for understanding.
+    *   **Crucially, reference the relevant source code directories (e.g., `src/api/`, `pkg/database/`). This is vital for developers and AI code generation.**
+*   **Example (Generic Class Diagram):**
+    ```mermaid
+    classDiagram
+        class ApiController { # Related to Epic Y
+            +processRequest(RequestModel) ResponseModel
+        }
+        class BusinessLogicService { # Related to Epic Y
+            +executeTask(data) Result
+        }
+        class DataRepository {
+            +findById(id) Entity
+            +save(Entity) Entity
+        }
+        ApiController --> BusinessLogicService : uses
+        BusinessLogicService --> DataRepository : uses
+    ```
+
+### 6. Data Flow (Detailed, Scope-Specific)
+*   **Goal:** Show how data moves *in detail* through the system for one or two key operations *within the scope*, expanding on the high-level flow in the architecture diagram.
+*   **Recommendation:** Use sequence diagrams (`sequenceDiagram`) in Mermaid.
+*   **Content:** Illustrate the precise interactions between components (UI, API, Services, DB, External Systems) during a specific request or process relevant to the scope.
+*   **Example (Generic Sequence Diagram):**
+    ```mermaid
+    sequenceDiagram
+        participant User
+        participant WebApp as Web Application
+        participant BackendAPI as Backend API
+        participant Database as Database
+
+        User->>WebApp: Submit Form Data (Epic Z feature)
+        WebApp->>BackendAPI: POST /resource (data)
+        BackendAPI->>Database: INSERT INTO table (...)
+        Database-->>BackendAPI: Success/Failure
+        BackendAPI-->>WebApp: Confirmation/Error
+        WebApp-->>User: Display Result
+    ```
+
+### 7. Key Implementation Details & Architectural Decisions (Scope-Specific)
+*   **Goal:** Highlight important algorithms, non-obvious design patterns, state management approaches, complex logic sections, **and the *rationale* behind key architectural choices *relevant to the scope*.**
+*   **Recommendation:** Use concise explanations paired with relevant, simplified code snippets. Use clear subheadings for specific decisions.
+*   **Content:**
+    *   Explain *why* a particular technology, pattern, or approach was chosen over alternatives *for this epic/project*.
+    *   Provide illustrative code examples.
+    *   Focus on non-obvious, critical, or potentially confusing parts of the implementation *within the scope*.
+*   **Example (Code Snippet):**
+    ```python
+    # Example: State transition logic for Epic X
+    def get_next_state_for_epic_x(current_state: State, event: Event) -> State:
+        # ... transitions specific to Epic X
+    ```
+
+### 8. Deployment Architecture (If Applicable, Usually Project-Level)
+*   **Goal:** Describe how the application is deployed, hosted, and scaled. (This is often more relevant at the project level but might have epic-specific considerations).
+*   **Recommendation:** Use infrastructure diagrams (Mermaid `graph TD` is suitable).
+*   **Content:** Show servers, containers, load balancers, databases, cloud services, networking, CI/CD overview.
+*   **Example (Generic Deployment Diagram):**
+     ```mermaid
+     graph TD
+         DNS --> LB[Load Balancer]
+         LB --> AppServer1[App Server / Container 1]
+         LB --> AppServer2[App Server / Container 2]
+         AppServer1 --> Cache[(Shared Cache)]
+         AppServer2 --> Cache
+         AppServer1 --> DB[(Primary Database)]
+         AppServer2 --> DB_Replica[(Read Replica DB)]
+     ```
+
+### 9. Development & Testing (Scope-Specific Setup)
+*   **Goal:** Guide developers (and assist the AI) on how to set up, run, and test the project *or specific parts related to an epic*.
+*   **Content:**
+    *   Clear instructions for setting up the development environment (dependencies, tools, environment variables - note any epic-specific needs).
+    *   Commands for building and running the application locally.
+    *   Information on running tests (unit, integration, e2e) relevant to the scope.
+    *   Link to contribution guidelines, code style guides, and PR processes.
+
+## II. Best Practices
+
+*   **Target Your Audience within the Doc:** Use clear language. Consider call-outs for less technical readers. Use precise technical language where needed.
+*   **Visuals are Key:** Diagrams improve understanding. Keep them clear, consistent, focused on the scope (project or epic). Mermaid preferred.
+*   **Rationale is Crucial:** Explicitly document the "why" behind significant decisions *within the scope*.
+*   **Be Concise but Complete:** Avoid unnecessary jargon, but include critical technical details for the scope.
+*   **Keep it Updated:** Technical overviews become outdated. Establish a process for keeping the document current (project and epic levels).
+*   **Link to Code & Other Docs:** Provide links/references to relevant source code directories and *other related documents within the same scope* (e.g., an epic overview linking to the epic's PRD: `[Epic PRD](mdc:../1-PRD.md)` or `[Epic PRD](mdc:docs/epics/<EPIC_KEY>/1-PRD.md)`).
+*   **Consistency:** Maintain a consistent style and terminology.
+*   **Structure for AI:** Use clear Markdown formatting.
+
+By following these guidelines, you can create technical overview documents (project-wide or epic-specific) that effectively align clients, developers, and AI for the relevant scope. 

@@ -1,0 +1,46 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Guide: Utilizing the Epic-Specific Product Requirements Document (PRD)
+
+This rule guides the AI on how to interact with and leverage the Product Requirements Document (PRD) associated with a specific Jira Epic. These documents are typically located within the epic's dedicated folder (e.g., `docs/epics/<EPIC_KEY>/1-PRD.md`). The PRD defines the "what" and "why" for the scope of that epic - outlining features, user stories, goals, and constraints relevant to it.
+
+## **I. Core Purpose of the Epic PRD**
+
+The PRD within an epic's folder (e.g., `docs/epics/<EPIC_KEY>/1-PRD.md`) is the source of truth for product features and requirements *covered by that epic*. It dictates the intended functionality, target audience, and success criteria for that specific work package.
+
+**Action:** When asked about:
+*   Product features or their desired behavior *related to a specific epic*
+*   User stories or acceptance criteria *within an epic*
+*   The scope or goals of *a specific epic* or a module within it
+*   Clarification on requirements before implementing *an epic's tasks*
+
+**Always consult the PRD document located within the relevant epic's folder first.** Use the file linking syntax, specifying the epic context: [1-PRD.md](mdc:docs/epics/<EPIC_KEY>/1-PRD.md)
+
+## **II. Referencing the Epic PRD**
+
+When referencing information from an epic's PRD in your responses or generated code/documentation:
+*   Be specific: Mention the relevant section or requirement number if possible (e.g., "Based on the PRD for Epic <EPIC_KEY>, Section 4.2, the user should receive...").
+*   Use the file linking syntax for clarity, ensuring the correct epic folder is specified: "See requirement R5 in [1-PRD.md](mdc:docs/epics/<EPIC_KEY>/1-PRD.md)."
+
+## **III. Relationship to Other Documents & Processes**
+
+Each epic's PRD informs several other key project artifacts and workflows, typically also located within the same epic folder:
+
+1.  **Technical Specifications:** Requirements from the epic's PRD are translated into technical designs within that epic's context. See also @004-Technical-Overview-Docs.mdc and @006-Backend-Structure-Docs.mdc for general guidance on creating these documents, applying it within the epic's scope (`docs/epics/<EPIC_KEY>/3-TechnicalOverview.md`, `docs/epics/<EPIC_KEY>/5-BackendStructure.md`).
+2.  **Jira Tasks:** Features and requirements outlined in the epic's PRD should correspond to Jira issues linked to that Epic.
+    *   When creating Jira tasks or discussing implementation for an epic, reference the relevant requirement from the epic's PRD.
+    *   Use the guidance in @001-Jira-Task-Management.mdc for interacting with Jira, focusing on issues related to the specific epic. If a requirement lacks a clear Jira link within the epic, mention this and suggest creating one or ask the user for the relevant issue key.
+3.  **Implementation Plans:** Technical implementation plans break down the epic's PRD requirements into actionable steps, usually found in the epic's folder (`docs/epics/<EPIC_KEY>/6-ImplementationPlan.md`). See @007-Implementation-Plan-Docs.mdc for structural guidance.
+
+## **IV. Modifying an Epic PRD**
+
+**Caution:** The AI should **NOT** modify any PRD file (e.g., `docs/epics/<EPIC_KEY>/1-PRD.md`) directly unless explicitly instructed to do so by the user and after receiving confirmation. PRDs are critical documents usually managed through a formal review process, even at the epic level. If asked to update requirements, clarify if the request involves updating the *actual PRD file within the specific epic folder* or just reflecting the requirement in code/tasks.
+
+## **V. Example Interaction**
+
+**User:** "Implement the user profile update feature for Epic PROJ-123."
+
+**AI (Ideal Response):** "Okay, I can help with that. Consulting the PRD for Epic PROJ-123 ([1-PRD.md](mdc:docs/epics/PROJ-123/1-PRD.md)), Section 5, the requirements for profile updates include allowing users to change their display name and avatar. Does this correspond to a specific Jira issue linked to PROJ-123, like TASK-456? I'll proceed based on these requirements and the guidelines in @004-Technical-Overview-Docs.mdc and @006-Backend-Structure-Docs.mdc, applying them to the technical implementation details within the PROJ-123 scope (e.g., potentially documented in `docs/epics/PROJ-123/3-TechnicalOverview.md` and `docs/epics/PROJ-123/5-BackendStructure.md`)."

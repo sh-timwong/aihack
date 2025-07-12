@@ -1,0 +1,46 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Guide: Documenting Application Flow (AppFlow) - Project & Epic Scope
+
+This rule guides the AI on understanding, referencing, and contributing to Application Flow (AppFlow) documentation, which exists at two levels:
+1.  **Project Level:** A main document (e.g., `docs/2-AppFlow.md`) outlining the core user journeys and interactions for the entire application.
+2.  **Epic Specific:** Documents within epic folders (e.g., `docs/epics/<EPIC_KEY>/2-AppFlow.md`) detailing or expanding upon flows *specific* to that epic's features.
+
+## **I. Core Purpose of AppFlow Documentation**
+
+*   **Project Level (`docs/2-AppFlow.md`):** Clarifies the primary user interaction sequences across the whole system.
+*   **Epic Level (`docs/epics/<EPIC_KEY>/2-AppFlow.md`):** Details *how* a user interacts with the system to achieve goals defined within the specific epic's PRD ([1-PRD.md](mdc:docs/epics/<EPIC_KEY>/1-PRD.md)). It focuses on user experience and interaction sequences for features introduced or modified by that epic, often linking back to the main project flow.
+
+**Action:** When asked about:
+*   **Overall application flow or core user journeys:** Consult the main project document first: [2-AppFlow.md](mdc:docs/2-AppFlow.md).
+*   **User journeys or specific screen sequences *for an epic's features*:** Consult the specific epic's AppFlow document: [2-AppFlow.md](mdc:docs/epics/<EPIC_KEY>/2-AppFlow.md).
+*   **How different UI components interact *within an epic's scope*:** Consult the epic's AppFlow document.
+*   **The expected flow of actions for a user task *covered by a specific epic*:** Consult the epic's AppFlow document.
+
+## **II. Referencing AppFlow Documents**
+
+When discussing user flows or UI interactions:
+*   **For overall flows:** Reference the main document (e.g., "As shown in the main AppFlow diagram [2-AppFlow.md](mdc:docs/2-AppFlow.md), the standard login process involves...").
+*   **For epic-specific flows:** Reference the specific epic's document (e.g., "The password reset flow for Epic <EPIC_KEY> is detailed in [2-AppFlow.md](mdc:docs/epics/<EPIC_KEY>/2-AppFlow.md), Step 3 involves...").
+
+## **III. Relationship to Other Documents**
+
+*   **Project AppFlow:** Relates to the overall PRD and Technical Overview.
+*   **Epic AppFlow:** Relates closely to other documents within the *same epic folder*:
+    *   **Epic PRD ([1-PRD.md](mdc:docs/epics/<EPIC_KEY>/1-PRD.md)):** The AppFlow illustrates interactions to meet the epic's requirements.
+    *   **Epic Technical Overview ([3-TechnicalOverview.md](mdc:docs/epics/<EPIC_KEY>/3-TechnicalOverview.md)):** Provides technical context for the epic's flow.
+    *   **Epic Frontend Structure ([4-FrontendStructure.md](mdc:docs/epics/<EPIC_KEY>/4-FrontendStructure.md)):** Details the UI components implementing the epic's flow.
+    *   **Epic Implementation Plan ([6-ImplementationPlan.md](mdc:docs/epics/<EPIC_KEY>/6-ImplementationPlan.md)):** Lists tasks to build the epic's flow.
+
+## **IV. Modifying AppFlow Documents**
+
+Similar to PRDs, the AI should generally **not** modify AppFlow documents (project or epic level) directly without explicit user confirmation. Changes often require design input and alignment.
+
+## **V. Example Interaction**
+
+**User:** "How should the user reset their password according to the plan for Epic PROJ-456?"
+
+**AI (Ideal Response):** "Let me check the documentation for Epic PROJ-456. The user journey for password reset specific to this epic is detailed in its AppFlow document ([2-AppFlow.md](mdc:docs/epics/PROJ-456/2-AppFlow.md)). It outlines a multi-step process starting with requesting a reset link via email. This likely elaborates on the general authentication flows described in the main project AppFlow ([2-AppFlow.md](mdc:docs/2-AppFlow.md)). The corresponding technical implementation details should be in the epic's Technical Overview ([3-TechnicalOverview.md](mdc:docs/epics/PROJ-456/3-TechnicalOverview.md)) and Implementation Plan ([6-ImplementationPlan.md](mdc:docs/epics/PROJ-456/6-ImplementationPlan.md))."

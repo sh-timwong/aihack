@@ -1,0 +1,116 @@
+---
+description: Guidelines for creating comprehensive backend structure documentation, covering architecture, components, database, APIs, error handling, and security. Inspired by standard project blueprints.
+globs: 
+alwaysApply: false
+---
+# Guide: Documenting Backend Structure (Project & Epic Scope)
+
+This rule provides guidelines for creating backend structure documentation, existing at two levels:
+1.  **Project Level:** A main document (e.g., `docs/5-BackendStructure.md`) describing the overall backend architecture, core services, database design, and API conventions.
+2.  **Epic Specific:** Documents within epic folders (e.g., `docs/epics/<EPIC_KEY>/5-BackendStructure.md`) detailing the specific backend changes, new components, schema modifications, or API endpoints *introduced or modified* by that epic.
+
+A well-documented backend is crucial for maintainability, onboarding, and understanding the impact of specific features.
+
+## 1. Architecture Overview (Scope-Specific)
+
+*   **Project Level:** Describe the overall backend architecture (Monolith, Microservices, etc.), core components, and interaction patterns in the main document.
+*   **Epic Level:** In the epic-specific document (`docs/epics/<EPIC_KEY>/5-BackendStructure.md`):
+    *   **Affected Architecture:** Briefly describe how the epic *impacts* the overall architecture. Does it introduce new services, modify existing ones significantly, or change interaction patterns? Link back to the project-level overview (`[Main Architecture](mdc:docs/5-BackendStructure.md)`).
+    *   **Rationale (Epic Context):** Explain *why* certain backend architectural choices were made *specifically for this epic*.
+    *   **High-Level Diagram (Epic Focus):** Include a diagram focusing on the components and interactions *relevant to this epic*. Highlight new or modified elements.
+
+    ```mermaid
+    graph TD
+        Client([Client Application]) --> API[API Gateway / Backend Entry]
+        API --> ServiceA[Service A - Modified by Epic]
+        API --> ServiceC[New Service C - Added by Epic]
+        ServiceA --> DB[(Database - Schema Changes)]
+        ServiceC --> ServiceA
+        ServiceC --> ExternalAPI[External Service]
+    ```
+
+## 2. Key Components / Services (Scope-Specific)
+
+*   **Project Level:** Describe the purpose and technology of core backend services/modules in the main document.
+*   **Epic Level:** Detail components/services *introduced or significantly modified by this epic*:
+    *   **Name/Path:** Identify the component (e.g., `New Notification Service`, `Order Processing Module - Update`, `app/services/notifications/`).
+    *   **Purpose (Epic Context):** Describe its primary responsibility *as it relates to the epic's features*.
+    *   **Key Technologies:** List main frameworks/libraries used *for the epic's changes*.
+    *   **Core Responsibilities (Epic Additions/Changes):** Detail the specific tasks the component performs *for this epic*.
+    *   **Dependencies (New/Changed):** List other internal components or external services it now relies on due to the epic.
+
+## 3. Database Schema (Scope-Specific)
+
+*   **Project Level:** Document the overall database design, main tables/collections, and relationships in the main document.
+*   **Epic Level:** Focus on the database changes *required by this epic*:
+    *   **Affected Database(s):** Identify the database(s) impacted by the epic.
+    *   **Core Tables / Collections (New/Modified):** For each significant table or collection *added or altered for this epic*:
+        *   **Name:** `user_preferences` (New), `orders` (Modified), etc.
+        *   **Schema Definition Changes:** Detail the new structure or the specific modifications (new fields, changed types, constraints) introduced by the epic. Reference the original schema if helpful.
+            *   **SQL Example (Alter Table):**
+                ```sql
+                -- Change for Epic PROJ-123
+                ALTER TABLE orders
+                ADD COLUMN tracking_id VARCHAR(100),
+                ADD COLUMN status_updated_at TIMESTAMPTZ;
+                ```
+            *   **NoSQL Example (New Field):**
+                ```json
+                // Collection: users - Added for Epic PROJ-456
+                {
+                  // ... existing fields
+                  "preferences": {
+                    "receive_newsletter": "Boolean",
+                    "theme": "String"
+                  }
+                }
+                ```
+        *   **New Indexes:** List important indexes added specifically for the epic's queries.
+    *   **New Relationships:** Describe any new relationships between tables/collections introduced by the epic.
+    *   **Migration Script(s):** **Reference:** Point to the specific migration file(s) (e.g., Alembic script, Prisma migration file) that implement the schema changes for this epic.
+
+## 4. API Design (Scope-Specific)
+
+*   **Project Level:** Document the overall API style (REST, GraphQL, etc.), authentication/authorization methods, versioning strategy, and common conventions in the main document.
+*   **Epic Level:** Focus on API endpoints *added or modified by this epic*:
+    *   **Affected API Style/Version:** Note if the epic introduces changes affecting API style or requires versioning considerations.
+    *   **Authentication & Authorization Changes:** Detail any new permissions, roles, or authentication requirements introduced by the epic's endpoints.
+    *   **New/Modified Endpoints / Operations:** Document the main API endpoints or RPC methods *added or changed for this epic*. For each:
+        *   **HTTP Method & Path / RPC Name:** (e.g., `POST /users/{id}/preferences` (New), `GET /orders/{id}` (Modified))
+        *   **Purpose (Epic Context):** Describe what the endpoint does *in relation to the epic's features*.
+        *   **Authorization:** Required permissions/roles.
+        *   **Request Body / Parameters:** Structure and validation rules (highlighting changes).
+        *   **Success Response:** Status code and body structure (highlighting changes).
+        *   **Error Responses:** Possible error codes and meanings, especially new ones introduced.
+
+## 5. Error Handling Strategy (Scope-Specific)
+
+*   **Project Level:** Define standard error formats, HTTP status code usage, and core application error codes in the main document.
+*   **Epic Level:** Detail *new* aspects related to the epic:
+    *   **New Error Codes:** List any new application-specific error codes introduced by the epic's logic.
+    *   **Logging Considerations:** Specify any particular logging requirements for the new/modified components or flows related to the epic (e.g., logging specific events, debugging sensitive calculations).
+
+## 6. Background Job Processing (Scope-Specific)
+
+*   **Project Level:** Describe the overall approach to background jobs, the technology used (e.g., Celery, SQS), and general monitoring/retry strategies in the main document.
+*   **Epic Level:** Detail jobs *introduced or significantly modified* by the epic:
+    *   **New Jobs:** Describe any background jobs introduced by the epic.
+    *   **Technology:** Specify queue/worker tech used *for these jobs* (if different from the project standard).
+    *   **Trigger/Definition:** How these new jobs are defined and triggered.
+    *   **Monitoring/Retries:** Specific considerations for monitoring the epic's jobs.
+
+## 7. Security Considerations (Scope-Specific)
+
+*   **Project Level:** Outline overall security practices (input validation methods, common protections, sensitive data handling policies, secrets management strategy) in the main document.
+*   **Epic Level:** Focus on security aspects *specific to the epic's features*:
+    *   **Input Validation:** Detail validation logic added for new inputs related to the epic.
+    *   **Specific Protections:** Mention how security concerns *specific to the epic's features* are addressed (e.g., handling new types of sensitive data, specific authorization checks).
+    *   **Sensitive Data Handling:** Describe any new sensitive data introduced by the epic and how it's handled (storage, secrets management), ensuring it aligns with project policy.
+
+## Relationship to Other Documents
+
+*   **Project Backend Doc:** Provides the foundation.
+*   **Epic Backend Doc:** Relates to others within the *same epic folder*:
+    *   **Epic PRD ([1-PRD.md](mdc:docs/epics/<EPIC_KEY>/1-PRD.md)):** Defines requirements leading to these backend changes.
+    *   **Epic Technical Overview ([3-TechnicalOverview.md](mdc:docs/epics/<EPIC_KEY>/3-TechnicalOverview.md)):** Provides high-level context.
+    *   **Epic Implementation Plan ([6-ImplementationPlan.md](mdc:docs/epics/<EPIC_KEY>/6-ImplementationPlan.md)):** Details tasks to implement these changes.

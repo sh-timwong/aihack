@@ -1,0 +1,324 @@
+---
+description: Comprehensive guide for integrating Mem0 with the Google Agent Development Kit (ADK) to build stateful, personalized AI agents.
+globs: 
+alwaysApply: false
+---
+# ADK-with-Mem0
+
+This document provides a comprehensive guide for integrating Mem0 with the Google Agent Development Kit (ADK) to build stateful, personalized AI agents.
+
+## 1. Code Organization and Structure
+
+A well-organized project is key to building maintainable and scalable ADK agents with memory capabilities.
+
+### 1.1 Directory Structure
+
+Here’s a recommended directory structure for an ADK project using Mem0:
+
+```
+adk-mem0-agent/
+├── src/
+│   ├── agents/
+│   │   ├── main_agent.py      # The main agent definition
+│   │   └── __init__.py
+│   ├── tools/
+│   │   ├── memory_tools.py    # Mem0 related tools
+│   │   └── __init__.py
+│   ├── core/
+│   │   ├── config.py          # Configuration for API keys, etc.
+│   │   └── __init__.py
+│   └── main.py                # Application entry point
+├── tests/
+│   ├── tools/
+│   │   └── test_memory_tools.py
+│   └── conftest.py
+├── .env                       # Environment variables (for Mem0/Google API keys)
+└── requirements.txt
+```
+
+- **`src/agents`**: Contains the core agent logic.
+- **`src/tools`**: Holds custom tools, with Mem0 tools in a dedicated module.
+- **`src/core`**: For application-wide configuration and settings.
+- **`main.py`**: The entry point to run your agent.
+
+### 1.2 File Naming and Module Organization
+
+- **Agent files**: `*_agent.py` (e.g., `main_agent.py`)
+- **Tool files**: `*_tools.py` (e.g., `memory_tools.py`)
+- **Configuration**: Keep all configurations in `src/core/config.py` and load them from environment variables.
+
+## 2. Common Patterns and Best Practices
+
+### 2.1 Integrating Mem0 Client
+
+First, initialize the `AsyncMemoryClient` from the `mem0` library. It's best to do this in a central place, like your main application entry point or a configuration module.
+
+**Installation:**
+```bash
+pip install mem0ai 'google-generativeai'
+```
+
+**Initialization:**
+```python
+# src/core/config.py
+import os
+from mem0 import AsyncMemoryClient
+
+# Load API keys from environment variables
+os.environ["MEM0_API_KEY"] = "your-mem0-api-key"
+os.environ["GOOGLE_API_KEY"] = "your-google-api-key"
+
+mem0_client = AsyncMemoryClient()
+USER_ID = "default-user" # Or a dynamic user ID management system
+```
+
+### 2.2 Creating Memory Tools for ADK
+
+Use ADK's `@function_tool` decorator to create tools for saving and searching memories. These functions will interact with the `mem0_client`.
+
+```python
+# src/tools/memory_tools.py
+from google.adk.tools import function_tool
+from src.core.config import mem0_client, USER_ID
+
+@function_tool
+async def save_memory(memory: str) -> str:
+    """Stores a piece of information into memory."""
+    await mem0_client.add(memory, user_id=USER_ID)
+    return f"I've remembered this: {memory}"
+
+@function_tool
+async def search_memories(query: str) -> str:
+    """Searches for relevant memories."""
+    results = await mem0_client.search(query, user_id=USER_ID, limit=3)
+    if not results or not results.get('results'):
+        return "I don't have any relevant memories about that."
+    
+    memories = [res['memory'] for res in results.get('results', [])]
+    return "Here's what I remember that might be relevant:\n" + "\n".join(memories)
+
+```
+
+### 2.3 Creating the Agent
+
+Now, create an ADK agent and provide it with the memory tools.
+
+```python
+# src/agents/main_agent.py
+from google.adk.agents import LlmAgent
+from src.tools.memory_tools import save_memory, search_memories
+
+def create_agent():
+    return LlmAgent(
+        model="gemini-1.5-flash",
+        name="memory_agent",
+        instruction="""You are a helpful assistant with memory.
+        Use 'save_memory' to remember important information.
+        Use 'search_memories' to recall relevant context before answering.
+        """,
+        tools=[save_memory, search_memories]
+    )
+```
+
+### 2.4 State Management and Error Handling
+
+- **User IDs**: Manage `user_id` carefully to maintain separate memories for different users. Pass it through your application's context.
+- **Error Handling**: Wrap `mem0_client` calls in `try...except` blocks to handle potential API errors gracefully, so your agent can continue functioning even if memory operations fail.
+
+## 3. Performance Considerations
+
+- **Search `limit`**: Use the `limit` parameter in `mem0_client.search()` to control the number of memories returned, preventing overly large context for the LLM.
+- **Search `threshold`**: Adjust the `threshold` in `search()` to filter out less relevant memories, improving the signal-to-noise ratio.
+- **Asynchronous Operations**: ADK and `mem0` are async-native. Ensure all tool functions and interactions are `async` to leverage non-blocking I/O.
+
+## 4. Security Best Practices
+
+- **API Keys**: Never hardcode API keys. Use environment variables (e.g., via a `.env` file and `python-dotenv`) to manage sensitive keys.
+- **Data Privacy**: Be mindful of the data you store in Mem0, especially Personally Identifiable Information (PII). Ensure your application complies with privacy regulations like GDPR. Mem0 is SOC 2 and HIPAA compliant, providing a secure platform.
+- **Input Validation**: Before saving memories, validate and sanitize user input to prevent injection attacks or storing malicious content.
+
+## 5. Testing Approaches
+
+- **Unit Testing Tools**: Write unit tests for your memory tools. Use `pytest-mock` to mock the `mem0_client` and verify that your tools call it with the correct parameters.
+- **Integration Testing**: Create integration tests that run the full agent loop for a few turns to ensure the agent correctly decides when to save or search for memories based on prompts.
+- **End-to-End Testing**: Test the complete user flow to ensure the agent's memory-driven responses are coherent and helpful over a longer conversation.
+
+## 6. Common Pitfalls
+
+- **Forgetting to provide `user_id`**: This will lead to memories being mixed between users or saved to a default user.
+- **Over-saving memories**: Instruct your agent to be selective about what it saves. Not every detail is important. This saves costs and keeps the memory relevant.
+- **Ignoring search results**: Ensure the agent's prompt guides it to *use* the retrieved memories to formulate a better response.
+
+## 7. Tooling and Environment
+
+- **`mem0ai`**: The Python SDK for interacting with Mem0.
+- **`google-generativeai`**: The Google AI Python SDK for ADK.
+- **`python-dotenv`**: For managing environment variables.
+
+A typical `requirements.txt` would look like:
+```
+mem0ai
+google-generativeai
+python-dotenv
+pytest
+pytest-mock
+```# 024-ADK-with-Mem0.mdc
+
+This document provides a comprehensive guide for integrating Mem0 with the Google Agent Development Kit (ADK) to build stateful, personalized AI agents.
+
+## 1. Code Organization and Structure
+
+A well-organized project is key to building maintainable and scalable ADK agents with memory capabilities.
+
+### 1.1 Directory Structure
+
+Here’s a recommended directory structure for an ADK project using Mem0:
+
+```
+adk-mem0-agent/
+├── src/
+│   ├── agents/
+│   │   ├── main_agent.py      # The main agent definition
+│   │   └── __init__.py
+│   ├── tools/
+│   │   ├── memory_tools.py    # Mem0 related tools
+│   │   └── __init__.py
+│   ├── core/
+│   │   ├── config.py          # Configuration for API keys, etc.
+│   │   └── __init__.py
+│   └── main.py                # Application entry point
+├── tests/
+│   ├── tools/
+│   │   └── test_memory_tools.py
+│   └── conftest.py
+├── .env                       # Environment variables (for Mem0/Google API keys)
+└── requirements.txt
+```
+
+- **`src/agents`**: Contains the core agent logic.
+- **`src/tools`**: Holds custom tools, with Mem0 tools in a dedicated module.
+- **`src/core`**: For application-wide configuration and settings.
+- **`main.py`**: The entry point to run your agent.
+
+### 1.2 File Naming and Module Organization
+
+- **Agent files**: `*_agent.py` (e.g., `main_agent.py`)
+- **Tool files**: `*_tools.py` (e.g., `memory_tools.py`)
+- **Configuration**: Keep all configurations in `src/core/config.py` and load them from environment variables.
+
+## 2. Common Patterns and Best Practices
+
+### 2.1 Integrating Mem0 Client
+
+First, initialize the `AsyncMemoryClient` from the `mem0` library. It's best to do this in a central place, like your main application entry point or a configuration module.
+
+**Installation:**
+```bash
+pip install mem0ai 'google-generativeai'
+```
+
+**Initialization:**
+```python
+# src/core/config.py
+import os
+from mem0 import AsyncMemoryClient
+
+# Load API keys from environment variables
+os.environ["MEM0_API_KEY"] = "your-mem0-api-key"
+os.environ["GOOGLE_API_KEY"] = "your-google-api-key"
+
+mem0_client = AsyncMemoryClient()
+USER_ID = "default-user" # Or a dynamic user ID management system
+```
+
+### 2.2 Creating Memory Tools for ADK
+
+Use ADK's `@function_tool` decorator to create tools for saving and searching memories. These functions will interact with the `mem0_client`.
+
+```python
+# src/tools/memory_tools.py
+from google.adk.tools import function_tool
+from src.core.config import mem0_client, USER_ID
+
+@function_tool
+async def save_memory(memory: str) -> str:
+    """Stores a piece of information into memory."""
+    await mem0_client.add(memory, user_id=USER_ID)
+    return f"I've remembered this: {memory}"
+
+@function_tool
+async def search_memories(query: str) -> str:
+    """Searches for relevant memories."""
+    results = await mem0_client.search(query, user_id=USER_ID, limit=3)
+    if not results or not results.get('results'):
+        return "I don't have any relevant memories about that."
+    
+    memories = [res['memory'] for res in results.get('results', [])]
+    return "Here's what I remember that might be relevant:\n" + "\n".join(memories)
+
+```
+
+### 2.3 Creating the Agent
+
+Now, create an ADK agent and provide it with the memory tools.
+
+```python
+# src/agents/main_agent.py
+from google.adk.agents import LlmAgent
+from src.tools.memory_tools import save_memory, search_memories
+
+def create_agent():
+    return LlmAgent(
+        model="gemini-1.5-flash",
+        name="memory_agent",
+        instruction="""You are a helpful assistant with memory.
+        Use 'save_memory' to remember important information.
+        Use 'search_memories' to recall relevant context before answering.
+        """,
+        tools=[save_memory, search_memories]
+    )
+```
+
+### 2.4 State Management and Error Handling
+
+- **User IDs**: Manage `user_id` carefully to maintain separate memories for different users. Pass it through your application's context.
+- **Error Handling**: Wrap `mem0_client` calls in `try...except` blocks to handle potential API errors gracefully, so your agent can continue functioning even if memory operations fail.
+
+## 3. Performance Considerations
+
+- **Search `limit`**: Use the `limit` parameter in `mem0_client.search()` to control the number of memories returned, preventing overly large context for the LLM.
+- **Search `threshold`**: Adjust the `threshold` in `search()` to filter out less relevant memories, improving the signal-to-noise ratio.
+- **Asynchronous Operations**: ADK and `mem0` are async-native. Ensure all tool functions and interactions are `async` to leverage non-blocking I/O.
+
+## 4. Security Best Practices
+
+- **API Keys**: Never hardcode API keys. Use environment variables (e.g., via a `.env` file and `python-dotenv`) to manage sensitive keys.
+- **Data Privacy**: Be mindful of the data you store in Mem0, especially Personally Identifiable Information (PII). Ensure your application complies with privacy regulations like GDPR. Mem0 is SOC 2 and HIPAA compliant, providing a secure platform.
+- **Input Validation**: Before saving memories, validate and sanitize user input to prevent injection attacks or storing malicious content.
+
+## 5. Testing Approaches
+
+- **Unit Testing Tools**: Write unit tests for your memory tools. Use `pytest-mock` to mock the `mem0_client` and verify that your tools call it with the correct parameters.
+- **Integration Testing**: Create integration tests that run the full agent loop for a few turns to ensure the agent correctly decides when to save or search for memories based on prompts.
+- **End-to-End Testing**: Test the complete user flow to ensure the agent's memory-driven responses are coherent and helpful over a longer conversation.
+
+## 6. Common Pitfalls
+
+- **Forgetting to provide `user_id`**: This will lead to memories being mixed between users or saved to a default user.
+- **Over-saving memories**: Instruct your agent to be selective about what it saves. Not every detail is important. This saves costs and keeps the memory relevant.
+- **Ignoring search results**: Ensure the agent's prompt guides it to *use* the retrieved memories to formulate a better response.
+
+## 7. Tooling and Environment
+
+- **`mem0ai`**: The Python SDK for interacting with Mem0.
+- **`google-generativeai`**: The Google AI Python SDK for ADK.
+- **`python-dotenv`**: For managing environment variables.
+
+A typical `requirements.txt` would look like:
+```
+mem0ai
+google-generativeai
+python-dotenv
+pytest
+pytest-mock
+```

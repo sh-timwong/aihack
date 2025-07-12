@@ -1,0 +1,169 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+
+# Guide: Creating and Maintaining Cursor Project Rules (.mdc Files)
+
+This document serves as the definitive guide for creating and managing `.mdc` (Markdown Configuration) files within this project. These files instruct Cursor's AI assistant, ensuring its generated code and suggestions align with our specific standards and context. Adhering to this format is crucial for rule effectiveness.
+
+## **I. Core Concept: Rules from Planning**
+
+**Key Principle:** Cursor Project Rules are not created in isolation. They are the *programmatic enforcement* of the standards, patterns, and decisions documented in our **Phase 1 Planning Documents**:
+*   `docs/1-PRD.md`
+*   `docs/2-AppFlow.md`
+*   `docs/3-TechStack.md`
+*   `docs/4-FrontendGuidelines.md`
+*   `docs/5-BackendStructure.md`
+*   `docs/6-ImplementationPlan.md` (for task-specific patterns)
+
+**Action:** Before creating a new rule, consult the relevant planning document(s) to ensure the rule accurately reflects the established guidelines.
+**Additionally:** If MCP documentation tools are available, use them to check the list of documentation sources (`mcp_mcp_docs_list_doc_sources`) and fetch relevant documents (`mcp_mcp_docs_fetch_docs`) to ensure your rule aligns with the latest external project documentation or context.
+
+## **II. F Frontmatter & Markdown**
+
+Every `.mdc` file MUST consist of two parts:
+
+1.  **YAML Frontmatter:** Configuration metadata at the very top, enclosed by `---`.
+2.  **Markdown Content:** Detailed instructions, examples, and rationale below the frontmatter.
+
+### **A. YAML Frontmatter Details**
+
+The frontmatter defines the rule's scope and activation criteria.
+
+```yaml
+---
+# Configuration keys determine rule behavior:
+
+name: A Concise and Descriptive Rule Name # e.g., React State Management Pattern
+description: AI-friendly summary explaining purpose and relevance # e.g., Frontend: Enforce usage of Zustand for state management as per guidelines.
+globs: src/stores/**/*.ts,src/components/featureX/**/*.tsx # Optional: Comma-separated list of file patterns. NO brackets, NO quotes.
+alwaysApply: false # Optional: Set true ONLY for universal rules (e.g., core formatting). Defaults to false.
+---
+```
+
+**Field Guidelines:**
+
+*   **`name` (Required):** A human-readable identifier for the rule. Use PascalCase or kebab-case.
+*   **`description` (Required):** Crucial for AI context. Clearly state *what* the rule does and *when* it's relevant. The format `<topic>: <details>` (e.g., `Security: Sanitize all user inputs`) works well.
+*   **`globs` (Optional):** Defines file paths where this rule is most relevant.
+    *   **🚨 CRITICAL SYNTAX WARNING:** The `globs` field is **NOT standard YAML**. It MUST be a **comma-separated string** of glob patterns. **DO NOT use YAML lists (`-`) or quotes (`"`) around the patterns.**
+    *   *Be Specific:* Use precise patterns (e.g., `src/utils/auth*.ts`) to limit rule application to relevant files, improving performance and accuracy.
+    *   *Omit if Overly Broad or Request-Specific:*
+        *   If a rule is only needed based onquest* (not specific files), leave `globs` empty.
+        *   If the *only* sensible glob is `**/*` (all files), omit `globs` and set `alwaysApply: true`.
+    *   *Examples:*
+        *   `src/**/*.module.css` (Specific CSS modules)
+        *   `api/**/*.py,tests/api/**/*.py` (API code and related tests)
+*   **`alwaysApply` (Optional):** Set to `true` for fundamental, project-wide rules (like core formatting) that should *always* be part of the AI's context. Use very sparingly. Defaults to `false`.
+
+### **B. Markdown Content Details**
+
+This section contains the rule's substance. Use standard Markdown for clarity.
+
+*   **Structure:**
+    *   Start with a clear `H1` title (`# Rule Title`).
+    *   Use hierarchical headings (`##`, `###`) to organize logically.
+    *   Employ bullet points (`-`) or numbered lists (`1.`) for guidelines.
+*   **Content:**
+    *   Clearly state the rule's requirements.
+    *   Provide **concrete code examples** illustrating both correct (`Good`) and incorrect (`Bad`) usage. Use fenced code blocks with language identifiers (e.g., ```typescript).
+    *   Explain the *rationale* behind the rule, referencing planning documents if applicable (e.g., "This aligns with `FrontendGuidelines.md` section 4.2 on state management.").
+    *   **Sanitize Examples:** Ensure code examples do not contain real secrets, API keys, or sensitive internal information. Use placeholders like `YOUR_API_KEY` or generic examples.
+*   **Example Markdown Structure:**
+    ```markdown
+    # Enforce Custom Hook Naming Convention
+
+    All custom React hooks must start with the prefix `use`. This aligns with React conventions and improves discoverability. Ref: `FrontendGuidelines.md` Sec 3.1.
+
+    ## Requirements
+    - Custom hook filenames must be `useMyHook.ts` (or `.tsx`).
+    - Exported function name must match the filename (PascalCase, e.g., `useMyHook`).
+
+    ## Examples
+
+    **Good:**
+    ```typescript
+    // src/hooks/useUserData.ts
+    import { useState, useEffect } from 'react';
+
+    export function useUserData(userId: string) {
+      // ... implementation ...
+      return { data, loading };
+    }
+    ```
+
+    **Bad:**
+    ```typescript
+    // src/hooks/userDataFetcher.ts // Incorrect filename prefix
+    import { useState, useEffect } from 'react';
+
+    export function userDataFetcher(userId: string) { // Incorrect function name prefix
+      // ... implementation ...
+      return { data, loading };
+    }
+    ```
+    ```
+
+## **III. Special Features**
+
+*   **File References (`@` syntax):** Link related rules for complex scenarios. When a rule containing `@other-rule.mdc` is activated, `other-rule.mdc` is also loaded into context.
+    ```markdown
+    See also the specific error handling patterns in @015-Basic-Error-Handling.mdc.
+    ```*   **Code Blocks:** Always use fenced code blocks with language identifiers for syntax highlighting and clarity.
+    ````markdown
+    ```python
+    # Example Python code
+    def calculate_sum(a, b):
+        return a + b
+    ```
+    ````
+
+## **IV. Best Practices for Rule Management**
+
+1.  **Clear Organization & Naming:**
+    *   Use **numbered prefixes** (e.g., `001-`, `010-`, `100-`) for rule files. This helps control logical grouping and potential load order importance (though Cursor's context management is sophisticated). Follow the SOP's suggested ranges (e.g., 001-099 Core, 100-199 Integration).
+    *   Use descriptive filenames (e.g., `025-Naming-Conventions.mdc`).
+    *   Consider subdirectories for specific concerns (e.g., `rules/security/`, `rules/performance/`).
+2.  **Specificity & Scope:**
+    *   Write highly specific `globs` and `description` fields.
+    *   Keep rules focused. If a rule becomes too broad, split it into smaller, more targeted rules. Aim for under ~300 lines per file.
+3.  **Content Quality:**
+    *   Prioritize clarity and actionability in instructions.
+    *   Ensure examples are accurate, minimal, and illustrative.
+    *   Explicitly state the *why* behind rules, linking to planning docs.
+4.  **Must-Have vs. Optional:** Focus on establishing the foundational "Must-Have" rules (formatting, basic language use, core framework patterns) first, as outlined in the SOP. Add "Optional" rules incrementally as needed for specific project complexities.
+5.  **Maintenance & Versioning:**
+    *   Treat `.mdc` files like code: commit changes to Git with clear messages.
+    *   If your project uses a master list rule (like the mentioned `010-workflow.mdc`), ensure it's updated when rules are added/removed (Note: This depends on specific project setup).
+    *   Regularly review existing rules for relevance and accuracy as the project evolves.
+
+## **V. AI-Assisted Rule Generation**
+
+You can use Cursor's AI or other LLMs to help draft rules, but **always review the output carefully against this guide**.
+
+**Effective Prompts for Rule Generation:**
+
+*   **Be Specific:** "Generate a Cursor project rule (`.mdc` format) based on `FrontendGuidelines.md` section X [paste relevant text]. The rule should enforce [specific requirement] for files matching `[glob pattern]`. Include good and bad code examples using TypeScript."
+*   **Provide Context:** "Analyze this code snippet [paste code] which demonstrates our standard API calling pattern. Create an `.mdc` rule named `110-APICall-Pattern.mdc` that enforces this pattern for all files in `src/services/**/*.ts`. Include the frontmatter with an appropriate description and glob."
+*   **Ask for Format:** "Draft the YAML frontmatter for a rule named 'Security Header Check' that applies to `api/**/*.py` files and describes enforcing specific HTTP security headers."
+
+**Review Checklist for AI-Generated Rules:**
+
+*   [ ] Is the **frontmatter** present and correctly formatted (especially `globs`)?
+*   [ ] Is the `description` clear and relevant?
+*   [ ] Are the `globs` specific and correct?
+*   [ ] Is the **Markdown content** well-structured with clear instructions?
+*   [ ] Are the **code examples** accurate, minimal, and illustrative of the rule?
+*   [ ] Does the rule accurately reflect the **planning documents** or desired standard?
+*   [ ] Are there any **sensitive details** in examples that need sanitizing?
+
+## **VI. Rule Activation in Cursor**
+
+Cursor automatically considers rules when:
+
+1.  The active file matches a rule's `glob` pattern.
+2.  A rule has `alwaysApply: true`.
+3.  The AI determines a rule's `description` is relevant to your current request or code context.
+4.  You explicitly reference a rule using `@rule-name.mdc` in your prompt.
