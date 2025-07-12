@@ -1,0 +1,7 @@
+
+# Python dependencies
+google-adk
+fastapi
+uvicorn
+pyyaml
+sqlalchemy 
