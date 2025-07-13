@@ -248,24 +248,14 @@ function startAudio() {
 
 // Stop audio recording
 function stopAudio() {
-  if (audioRecorderNode) {
-    audioRecorderNode.disconnect();
-    audioRecorderNode = null;
-  }
-
-  if (audioRecorderContext) {
-    audioRecorderContext
-      .close()
-      .catch((err) => console.error("Error closing audio context:", err));
-    audioRecorderContext = null;
-  }
-
-  if (micStream) {
+  if (isRecording) {
+    audioRecorderNode.port.postMessage({ command: "stop" });
     micStream.getTracks().forEach((track) => track.stop());
-    micStream = null;
+    isRecording = false;
+    stopAudioButton.style.display = "none";
+    startAudioButton.style.display = "inline-flex";
+    recordingContainer.style.display = "none";
   }
-
-  isRecording = false;
 }
 
 // Start the audio only when the user clicked the button
@@ -309,23 +299,15 @@ stopAudioButton.addEventListener("click", () => {
 
 // Audio recorder handler
 function audioRecorderHandler(pcmData) {
-  // Only send data if we're still recording
-  if (!isRecording) return;
-
-  // Send the pcm data as base64
+  const base64data = arrayBufferToBase64(pcmData);
   sendMessage({
     mime_type: "audio/pcm",
-    data: arrayBufferToBase64(pcmData),
+    data: base64data,
   });
-
-  // Log every few samples to avoid flooding the console
-  if (Math.random() < 0.01) {
-    // Only log ~1% of audio chunks
-    console.log("[CLIENT TO AGENT] sent audio data");
-  }
+  console.log("[CLIENT TO AGENT] ", pcmData);
 }
 
-// Encode an array buffer with Base64
+// Helper function to convert ArrayBuffer to Base64
 function arrayBufferToBase64(buffer) {
   let binary = "";
   const bytes = new Uint8Array(buffer);
@@ -334,4 +316,28 @@ function arrayBufferToBase64(buffer) {
     binary += String.fromCharCode(bytes[i]);
   }
   return window.btoa(binary);
+}
+
+
+/**
+ * Sidebar phase selection handling
+ */
+const phaseItems = document.querySelectorAll('.phase-item');
+
+if (phaseItems.length > 0 && messageInput) {
+    phaseItems.forEach(item => {
+        item.addEventListener('click', () => {
+            // Get the text of the clicked phase item and format it as a command
+            const phaseText = `proceed to ${item.textContent}`;
+
+            // Set the message input's value to the formatted phase text
+            messageInput.value = phaseText;
+
+            // Update the 'active' class on the phase items
+            phaseItems.forEach(i => {
+                i.classList.remove('active');
+            });
+            item.classList.add('active');
+        });
+    });
 }
