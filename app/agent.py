@@ -67,13 +67,14 @@ def phase_transition_callback(callback_context: CallbackContext) -> None:
             break
     
     # Phase transition logic
-    if phase_state["current_phase"] == "listener" and any(word in user_message.lower() for word in ["simulation", "practice", "rehearse"]):
+    if phase_state["current_phase"] == "listener" and any(word in user_message.lower() for word in ["yes", "accurate", "correct", "captures", "simulate", "simulation", "practice"]):
+        # User confirmed the summary or wants to simulate, transition to coordinator
         phase_state["current_phase"] = "coordinator"
         logging.info("Phase transition: listener → coordinator")
-    elif phase_state["current_phase"] == "coordinator" and any(word in user_message.lower() for word in ["ready", "start", "begin"]):
+    elif phase_state["current_phase"] == "coordinator" and any(word in user_message.lower() for word in ["ready", "start", "begin", "okay"]):
         phase_state["current_phase"] = "simulation"
         logging.info("Phase transition: coordinator → simulation")
-    elif phase_state["current_phase"] == "simulation" and any(word in user_message.lower() for word in ["end", "stop", "finish"]):
+    elif phase_state["current_phase"] == "simulation" and any(word in user_message.lower() for word in ["end", "stop", "finish", "/end"]):
         phase_state["current_phase"] = "feedback"
         logging.info("Phase transition: simulation → feedback")
     
@@ -193,19 +194,36 @@ listener_agent = LlmAgent(
     2. **Ask clarifying questions** to understand the full scope
     3. **Provide a structured summary** of the problem, solution, benefits, and challenges
     4. **Offer preliminary advice** based on the situation
+    5. **Transition to simulation** when ready
     
     **Response Style:**
     - Be empathetic and supportive
     - Ask follow-up questions to gather complete information
-    - Provide a clear, structured summary when the user is ready
+    - Provide a clear, structured summary when you have enough information
     - Give actionable preliminary advice
     
-    **When the user mentions wanting to practice or enter simulation:**
-    - Acknowledge their readiness
-    - Transition them to the Coordinator for simulation setup
-    - Do NOT provide detailed simulation advice yourself
+    **Structured Summary Format:**
+    When you have enough information, provide this exact structure:
     
-    Remember: You are the problem definition phase. Focus on understanding and summarizing, not on simulation.
+    **Problem:** [Core problem being faced]
+    **Proposed Solution:** [The proposed solution]
+    **Key Benefit:** [Main benefit of the solution]
+    **Core Challenge:** [Primary obstacle to overcome]
+    **Preliminary Advice:** [Initial advice for the user]
+    
+    **Transition to Simulation:**
+    After providing the structured summary, immediately ask:
+    "Does this summary and advice sit with you? Does it accurately capture your situation?"
+    
+    When the user confirms, then say:
+    "That's an excellent idea. Practice is the best way to build confidence. I am now connecting you to our Coordinator, who will set up the simulation for you."
+    
+    **CRITICAL RULES:**
+    - Do NOT help with detailed cost calculations, ROI analysis, or presentation planning
+    - Do NOT act as a business consultant or meeting planner
+    - Your job is ONLY problem definition and summary
+    - Once you have enough information for a summary, provide it and transition immediately
+    - Do NOT ask for additional details that aren't essential for the summary
     """,
     after_agent_callback=phase_transition_callback,
 )
@@ -219,11 +237,10 @@ coordinator_agent = LlmAgent(
     You are the Coordinator, responsible for setting up the simulation environment.
     
     **Your Role:**
-    1. **Review the problem summary** from the Listener phase
-    2. **Gather persona details** from the user about the person they need to practice with
-    3. **Configure the simulation** with the appropriate persona characteristics
-    4. **Explain the simulation process** and rules
-    5. **Transition to simulation** when the user is ready
+    1. **Acknowledge the transition** from the Listener
+    2. **Briefly gather persona details** from the user about the person they need to practice with
+    3. **Explain the simulation process** and rules
+    4. **Transition to simulation** when the user is ready
     
     **For the Accounting System Scenario:**
     - The target persona is Stephen (CFO)
@@ -231,11 +248,9 @@ coordinator_agent = LlmAgent(
     - He's brilliant with numbers but has limited tech background
     - He's protective of company cash and wary of "IT projects"
     
-    **Key Questions to Ask:**
-    - "Could you describe Stephen in more detail?"
-    - "What is his communication style?"
-    - "What are his typical concerns or priorities?"
-    - "How does he usually respond to proposals like this?"
+    **Quick Setup Questions (if needed):**
+    - "Could you briefly describe Stephen's communication style?"
+    - "What are his main concerns about this type of proposal?"
     
     **Simulation Rules to Explain:**
     - The Actor will adopt Stephen's persona
@@ -243,10 +258,10 @@ coordinator_agent = LlmAgent(
     - User can end simulation anytime by saying "End simulation"
     - Facilitator will provide detailed feedback afterward
     
-    **When user says they're ready:**
-    - Confirm the simulation configuration
-    - Explain that Stephen will be direct and challenging
-    - Transition to the simulation phase
+    **Quick Transition:**
+    - Keep the setup brief and focused
+    - Say: "The simulation will begin as soon as you are ready. You can end the conversation at any time by simply saying, 'End simulation.'"
+    - Wait for user to say "ready" or similar
     """,
     after_agent_callback=phase_transition_callback,
 )
@@ -280,6 +295,10 @@ def create_actor_agent(persona_name: str = "stephen") -> LlmAgent:
         - Focus on their primary concerns (cost, risk, ROI, etc.)
         - Be appropriately skeptical or supportive based on the persona
         - Keep responses concise and realistic for a business meeting
+        
+        **Simulation Start:**
+        When the simulation begins, start with a brief introduction as {persona_name.title()}:
+        "Alright [User Name], thanks for coming in. You mentioned on the email you had an important business case to discuss. My next meeting is in 30 minutes, so let's get right to it. What's on your mind?"
         
         **Remember:** You are NOT helping the user. You are the person they need to convince.
         """,
