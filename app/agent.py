@@ -3,7 +3,6 @@ import logging
 from collections.abc import AsyncGenerator
 from typing import Literal, Optional
 from pathlib import Path
-
 from google.adk.agents import BaseAgent, LlmAgent, SequentialAgent
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.agents.invocation_context import InvocationContext
@@ -357,8 +356,6 @@ class MeetingOrchestrator(LlmAgent):
             async for event in listener_agent._run_async_impl(ctx):
                 yield event
 
-# Main Orchestrator instance
-meeting_orchestrator = MeetingOrchestrator(name="Meeting_Orchestrator")
-
-# Root agent for the application
-root_agent = meeting_orchestrator 
+# Create the main orchestrator agent
+root_agent = MeetingOrchestrator(name="Meeting_Orchestrator")
+    

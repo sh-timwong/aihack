@@ -29,5 +29,5 @@ def load_persona_agent(persona_name: str) -> LlmAgent:
         description=persona_data["description"],
         instruction=persona_data["instruction"],
         # For now, we'll use a default model. This can be made configurable later.
-        model="gemini-2.0-flash",
+        model="gemini-2.5-pro",
     ) 

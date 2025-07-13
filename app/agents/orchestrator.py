@@ -19,7 +19,7 @@ def create_orchestrator_agent_v1() -> LlmAgent:
         description="The main orchestrator for the conversation simulation.",
         instruction="You are the orchestrator of a meeting. Your role is to receive the user's message and pass it to the participant in the meeting. The participant is in your sub_agents list. You must delegate the task to them.",
         sub_agents=[cto_agent],
-        model="gemini-2.0-flash",
+        model="gemini-2.5-pro",
     )
     return orchestrator 
 
